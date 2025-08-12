@@ -1,0 +1,90 @@
+-- Users (Supabase Auth provides this, but you can extend)
+create table users (
+  id uuid primary key default uuid_generate_v4(),
+  name text,
+  email text unique,
+  avatar_url text,
+  created_at timestamp with time zone default now()
+);
+
+-- Deposits
+create table deposits (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references users(id),
+  amount numeric,
+  method text,
+  status text,
+  created_at timestamp with time zone default now()
+);
+
+-- Withdrawals
+create table withdrawals (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references users(id),
+  amount numeric,
+  method text,
+  account_info jsonb,
+  status text,
+  created_at timestamp with time zone default now()
+);
+
+-- Trades
+create table trades (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references users(id),
+  symbol text,
+  amount numeric,
+  direction text,
+  open_time timestamp with time zone,
+  close_time timestamp with time zone,
+  result text
+);
+
+-- Leaderboard
+create table leaderboard (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references users(id),
+  amount numeric,
+  rank int,
+  updated_at timestamp with time zone default now()
+);
+
+-- Tournaments
+create table tournaments (
+  id uuid primary key default uuid_generate_v4(),
+  title text,
+  prize_pool numeric,
+  entry_fee numeric,
+  participants int,
+  duration text,
+  status text,
+  created_at timestamp with time zone default now()
+);
+
+-- Support Messages
+create table support_messages (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references users(id),
+  name text,
+  email text,
+  subject text,
+  message text,
+  created_at timestamp with time zone default now()
+);
+
+-- Live Chat Messages
+create table chat_messages (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references users(id),
+  sender text,
+  message text,
+  time timestamp with time zone default now()
+);
+
+-- User Settings (optional)
+create table settings (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references users(id),
+  notifications boolean,
+  private boolean
+);

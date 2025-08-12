@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { @apply bg-main text-main; }
+
+.sidebar-link { @apply flex flex-col items-center justify-center py-3 rounded-lg text-main hover:text-white hover:bg-tertiary transition-colors text-xs font-bold cursor-pointer w-16 h-16 mx-auto; }
+.sidebar-link.active { @apply bg-blue-600 text-white shadow-lg; }
+.icon { @apply text-2xl; }
