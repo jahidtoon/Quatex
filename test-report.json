@@ -1,0 +1,17 @@
+{
+  "timestamp": "2025-08-25T16:00:04.898Z",
+  "tests": {
+    "finnhubService": "pending",
+    "historicalDataManager": "pending",
+    "apiEndpoints": "pending"
+  },
+  "rateLimitStatus": {
+    "remainingCalls": 58,
+    "totalCalls": 60,
+    "timeUntilReset": 58773,
+    "resetTime": "2025-08-25T16:01:03.671Z"
+  },
+  "recommendations": [
+    "✅ System is ready for forex chart integration."
+  ]
+}

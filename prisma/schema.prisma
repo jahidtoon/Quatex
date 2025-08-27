@@ -1,0 +1,168 @@
+// Prisma schema mapping আপনার sql.note এর টেবিল অনুযায়ী
+// Database: PostgreSQL (Self-hosted)
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+ generator client {
+  provider = "prisma-client-js"
+ }
+
+// --- Trading Pairs (MVP Option 1) ---
+enum PairStatus {
+    ACTIVE
+    PAUSED
+    DISABLED
+}
+
+model currency_pairs {
+    id           String     @id @default(uuid()) @db.Uuid
+    base         String     @db.Text
+    quote        String     @db.Text
+    symbol       String     @unique @db.Text   // e.g. EUR_USD canonical
+    display      String?    @db.Text           // UI label e.g. EUR/USD
+  provider     String?    @db.Text           // e.g. BINANCE | COINGECKO | SIMULATED | ALPHAVANTAGE
+  provider_symbol String? @db.Text           // symbol used at provider (e.g. BTCUSDT)
+  price_decimals Int?                     // dynamic precision for display/rounding
+    status       PairStatus @default(ACTIVE)
+    payout       Int?                       // percentage integer (e.g. 80 = 80%)
+    latest_price Decimal?    @db.Decimal
+    last_updated DateTime?   @db.Timestamptz(6)
+    isDeleted    Boolean     @default(false)
+    created_at   DateTime    @default(now()) @db.Timestamptz(6)
+    updated_at   DateTime    @updatedAt @db.Timestamptz(6)
+
+    @@index([status])
+    @@index([isDeleted])
+    @@index([symbol])
+}
+
+// --- Stored Candles (1m base + higher intervals) ---
+model forex_candles {
+  id        String   @id @default(uuid()) @db.Uuid
+  symbol    String   @db.Text            // internal symbol e.g. EUR_USD
+  interval  String   @db.Text            // '1m','5m','15m','1h','4h','1d'
+  time      DateTime @db.Timestamptz(6)  // candle open time
+  open      Decimal  @db.Decimal
+  high      Decimal  @db.Decimal
+  low       Decimal  @db.Decimal
+  close     Decimal  @db.Decimal
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  @@unique([symbol, interval, time])
+  @@index([symbol, interval, time])
+}
+
+ model users {
+    id         String   @id @default(uuid()) @db.Uuid
+  name       String?  @db.Text
+  first_name String?  @db.Text
+  last_name  String?  @db.Text
+  email      String   @unique @db.Text
+  password_hash String? @db.Text
+  phone      String?  @db.Text
+  country    String?  @db.Text
+    is_verified Boolean  @default(false)
+    is_admin   Boolean   @default(false)
+  avatar_url String?  @db.Text
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  deposits        deposits[]
+  withdrawals     withdrawals[]
+  trades          trades[]
+  leaderboard     leaderboard[]
+  support_messages support_messages[]
+  chat_messages    chat_messages[]
+  settings        settings[]
+ }
+
+ model deposits {
+    id         String   @id @default(uuid()) @db.Uuid
+  user_id    String?  @db.Uuid
+  amount     Decimal? @db.Decimal
+  method     String?  @db.Text
+  status     String?  @db.Text
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  users users? @relation(fields: [user_id], references: [id])
+  @@index([user_id])
+ }
+
+ model withdrawals {
+    id          String   @id @default(uuid()) @db.Uuid
+  user_id     String?  @db.Uuid
+  amount      Decimal? @db.Decimal
+  method      String?  @db.Text
+  account_info Json?
+  status      String?  @db.Text
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  users users? @relation(fields: [user_id], references: [id])
+  @@index([user_id])
+ }
+
+ model trades {
+    id         String   @id @default(uuid()) @db.Uuid
+  user_id    String?  @db.Uuid
+  symbol     String?  @db.Text
+  amount     Decimal? @db.Decimal
+  direction  String?  @db.Text
+  open_time  DateTime? @db.Timestamptz(6)
+  close_time DateTime? @db.Timestamptz(6)
+  result     String?  @db.Text
+  users users? @relation(fields: [user_id], references: [id])
+  @@index([user_id])
+ }
+
+ model leaderboard {
+    id         String   @id @default(uuid()) @db.Uuid
+  user_id    String?  @db.Uuid
+  amount     Decimal? @db.Decimal
+  rank       Int?
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users users? @relation(fields: [user_id], references: [id])
+  @@index([user_id])
+ }
+
+ model tournaments {
+    id           String   @id @default(uuid()) @db.Uuid
+  title        String?  @db.Text
+  prize_pool   Decimal? @db.Decimal
+  entry_fee    Decimal? @db.Decimal
+  participants Int?
+  duration     String?  @db.Text
+  status       String?  @db.Text
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+ }
+
+ model support_messages {
+    id         String   @id @default(uuid()) @db.Uuid
+  user_id    String?  @db.Uuid
+  name       String?  @db.Text
+  email      String?  @db.Text
+  subject    String?  @db.Text
+  message    String?  @db.Text
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  users users? @relation(fields: [user_id], references: [id])
+  @@index([user_id])
+ }
+
+ model chat_messages {
+    id         String   @id @default(uuid()) @db.Uuid
+  user_id    String?  @db.Uuid
+  sender     String?  @db.Text
+  message    String?  @db.Text
+  time       DateTime @default(now()) @db.Timestamptz(6)
+  users users? @relation(fields: [user_id], references: [id])
+  @@index([user_id])
+ }
+
+ model settings {
+    id            String   @id @default(uuid()) @db.Uuid
+  user_id       String?  @db.Uuid
+  notifications Boolean? @default(false)
+  private       Boolean? @default(false)
+  users users? @relation(fields: [user_id], references: [id])
+  @@index([user_id])
+ }
+

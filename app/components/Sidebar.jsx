@@ -6,9 +6,29 @@ import { menuIcons } from './SidebarIcons';
 
 const SidebarLink = ({ page, currentPage, setCurrentPage, showLabel, extraClasses = '', badge }) => {
   const { icon, color, label } = menuIcons[page] || {};
+  
+  const handleClick = (e) => {
+    e.preventDefault();
+    
+    // For certain pages, navigate to their dedicated routes instead of using MainContent
+    const dedicatedRoutes = [
+      'trade', 'analytics', 'top', 'support', 'account', 
+      'tournaments', 'p2p', 'deposit', 'withdrawal', 
+      'transactions', 'settings', 'join-us'
+    ];
+    
+    if (dedicatedRoutes.includes(page)) {
+      // Navigate to dedicated page route
+      window.location.href = `/${page}`;
+    } else {
+      // Use existing MainContent system
+      setCurrentPage(page);
+    }
+  };
+
   return (
     <a
-      onClick={e => { e.preventDefault(); setCurrentPage(page); }}
+      onClick={handleClick}
       href="#"
       className={`sidebar-link flex flex-col items-center justify-center py-3 font-semibold ${currentPage === page ? 'active' : ''} ${extraClasses}`}
     >

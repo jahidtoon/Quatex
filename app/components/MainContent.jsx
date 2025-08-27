@@ -1,6 +1,6 @@
 import React from 'react';
-import Chart from './Chart';
-import TradePanel from './TradePanel';
+// Chart import removed as per request
+// PairTabs import removed as per request
 import Deposit from './pages/Deposit';
 import Withdrawal from './pages/Withdrawal';
 import Support from './pages/Support';
@@ -22,17 +22,27 @@ import Settings from './pages/Settings';
 import JoinUs from './pages/JoinUs';
 import LeaderBoard from './pages/LeaderBoard';
 
-const TradePage = () => (
-  <div className="flex flex-1 flex-row">
-    <Chart />
-    <TradePanel />
-  </div>
-);
+import { useState } from 'react';
+
+const TradePage = () => {
+  const [symbol, setSymbol] = useState('BTC/USDT');
+  return (
+    <div className="flex flex-1 flex-col min-h-0 bg-[#0f172a]">
+      <div className="px-3 py-2 bg-[#0f172a]">
+    {/* PairTabs removed as per request */}
+      </div>
+      <div className="flex flex-1 flex-row min-h-0">
+  {/* Chart removed as per request */}
+  {/* TradePanel removed as per request */}
+      </div>
+    </div>
+  );
+};
 
 const MainContent = ({ currentPage, setCurrentPage }) => {
   switch (currentPage) {
     case 'trade':
-      return <TradePage />;
+  return <TradePage key={symbol} />;
     case 'analytics':
       return <Analytics />;
     case 'top':

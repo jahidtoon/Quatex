@@ -1,0 +1,72 @@
+# VPS PostgreSQL ডাটাবেসে বাংলাদেশ থেকে অ্যাক্সেস করার গাইড
+
+## ১. PostgreSQL ইনস্টল ও কনফিগার (VPS-এ)
+
+```bash
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+```
+
+## ২. নতুন ইউজার ও ডাটাবেস তৈরি
+
+```bash
+sudo -u postgres createuser youruser --pwprompt
+sudo -u postgres createdb yourdbname --owner=youruser
+```
+
+## ৩. PostgreSQL listen address খুলুন
+
+`/etc/postgresql/14/main/postgresql.conf` (বা আপনার ভার্সন অনুযায়ী) ফাইলে:
+```
+listen_addresses = '*'
+```
+
+## ৪. ক্লায়েন্ট আইপি (বাংলাদেশ) থেকে অ্যাক্সেস অনুমতি দিন
+
+`/etc/postgresql/14/main/pg_hba.conf` ফাইলে:
+```
+host    all             all             0.0.0.0/0               md5
+```
+
+(নিরাপত্তার জন্য চাইলে শুধু আপনার আইপি দিন)
+
+## ৫. ফায়ারওয়াল/সিকিউরিটি গ্রুপে 5432 পোর্ট খুলুন
+
+```bash
+sudo ufw allow 5432/tcp
+```
+
+## ৬. সার্ভার রিস্টার্ট
+
+```bash
+sudo systemctl restart postgresql
+```
+
+## ৭. বাংলাদেশ থেকে কানেক্ট করুন
+
+Prisma/pgAdmin/DBeaver/Beekeeper Studio/psql দিয়ে:
+
+```
+postgresql://youruser:yourpassword@your-vps-ip:5432/yourdbname
+```
+
+## ৮. GUI ক্লায়েন্ট (উইন্ডোজ/লিনাক্স/ম্যাক)
+- pgAdmin: https://www.pgadmin.org/
+- DBeaver: https://dbeaver.io/
+- Beekeeper Studio: https://www.beekeeperstudio.io/
+
+## ৯. নিরাপত্তা টিপস
+- ইউজার strong password দিন
+- প্রয়োজনে VPS firewall-এ নির্দিষ্ট আইপি allow করুন
+- SSL/TLS এনাবল করুন (advanced)
+
+## ১০. Prisma দিয়ে মাইগ্রেশন
+
+```bash
+npx prisma migrate dev --name init
+```
+
+
+---
+
+**এই নোটটি সংরক্ষণ করুন, প্রয়োজনে বারবার ব্যবহার করতে পারবেন।**
