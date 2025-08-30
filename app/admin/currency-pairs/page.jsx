@@ -3,11 +3,15 @@ import React, { useState } from 'react';
 import AdminPageHeader from '../components/AdminPageHeader';
 import Card from '../components/Card';
 import StatCard from '../components/StatCard';
+import AdminActionModal from '../components/AdminActionModal';
 
 export default function AdminCurrencyPairsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedPairs, setSelectedPairs] = useState([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalType, setModalType] = useState('');
+  const [modalPair, setModalPair] = useState(null);
 
   // Mock data for currency pairs
   const currencyPairs = [
@@ -144,6 +148,30 @@ export default function AdminCurrencyPairsPage() {
   const activePairs = currencyPairs.filter(p => p.status === 'active').length;
   const totalVolume = currencyPairs.reduce((sum, p) => sum + p.volume, 0);
   const avgSpread = currencyPairs.reduce((sum, p) => sum + p.spread, 0) / totalPairs;
+
+  const handlePairAction = (action, pair) => {
+    setModalType(action);
+    setModalPair(pair);
+    setModalOpen(true);
+  };
+
+  const handleEditPair = (pairId) => {
+    // Implementation for editing pair
+    console.log('Editing pair:', pairId);
+    setModalOpen(false);
+  };
+
+  const handleTogglePairStatus = (pairId) => {
+    // Implementation for toggling pair status
+    console.log('Toggling pair status:', pairId);
+    setModalOpen(false);
+  };
+
+  const handleDeletePair = (pairId) => {
+    // Implementation for deleting pair
+    console.log('Deleting pair:', pairId);
+    setModalOpen(false);
+  };
 
   const handleStatusChange = (pairId, newStatus) => {
     // Here you would update the pair status via API
@@ -330,11 +358,20 @@ export default function AdminCurrencyPairsPage() {
                   </td>
                   <td className="p-4">
                     <div className="flex gap-2">
-                      <button className="text-blue-400 hover:text-blue-300 text-sm">
+                      <button 
+                        onClick={() => handlePairAction('view', pair)}
+                        className="text-blue-400 hover:text-blue-300 text-sm"
+                      >
+                        View
+                      </button>
+                      <button 
+                        onClick={() => handlePairAction('edit', pair)}
+                        className="text-green-400 hover:text-green-300 text-sm"
+                      >
                         Edit
                       </button>
                       <button 
-                        onClick={() => handleStatusChange(pair.id, pair.status === 'active' ? 'inactive' : 'active')}
+                        onClick={() => handlePairAction(pair.status === 'active' ? 'disable' : 'enable', pair)}
                         className={`text-sm ${
                           pair.status === 'active' 
                             ? 'text-red-400 hover:text-red-300' 

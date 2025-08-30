@@ -33,10 +33,14 @@ export default function AdminSidebar({ className = '', id = 'admin-sidebar', onN
         <div>
           <div className="text-xs uppercase tracking-wider text-gray-400 mb-1 px-1">Overview</div>
       <a className={linkClass} href="/admin" onClick={onNavigate}>Dashboard</a>
+      <a className={linkClass} href="/admin/analytics" onClick={onNavigate}>Analytics</a>
+      <a className={linkClass} href="/admin/reports" onClick={onNavigate}>Reports</a>
+      <a className={linkClass} href="/admin/live-monitoring" onClick={onNavigate}>Live Monitoring</a>
         </div>
         <div>
           <div className="text-xs uppercase tracking-wider text-gray-400 mb-1 px-1">Management</div>
       <a className={linkClass} href="/admin/users" onClick={onNavigate}>Users</a>
+      <a className={`${linkClass} text-green-400 pl-6`} href="/admin/users-new" onClick={onNavigate}>+ Add User</a>
       <a className={linkClass} href="/admin/trades" onClick={onNavigate}>Trades</a>
       <a className={linkClass} href="/admin/deposits" onClick={onNavigate}>Deposits</a>
       <a className={linkClass} href="/admin/withdrawals" onClick={onNavigate}>Withdrawals</a>
@@ -45,6 +49,7 @@ export default function AdminSidebar({ className = '', id = 'admin-sidebar', onN
         <div>
           <div className="text-xs uppercase tracking-wider text-gray-400 mb-1 px-1">Markets</div>
       <a className={linkClass} href="/admin/currency-pairs" onClick={onNavigate}>Currency Pairs</a>
+      <a className={`${linkClass} text-green-400 pl-6`} href="/admin/currency-pairs-new" onClick={onNavigate}>+ Add Pair</a>
         </div>
         <div>
           <div className="text-xs uppercase tracking-wider text-gray-400 mb-1 px-1">Community</div>
@@ -54,6 +59,9 @@ export default function AdminSidebar({ className = '', id = 'admin-sidebar', onN
         <div>
           <div className="text-xs uppercase tracking-wider text-gray-400 mb-1 px-1">System</div>
       <a className={linkClass} href="/admin/system" onClick={onNavigate}>System</a>
+      <a className={linkClass} href="/admin/risk-management" onClick={onNavigate}>Risk Management</a>
+      <a className={linkClass} href="/admin/notifications" onClick={onNavigate}>Notifications</a>
+      <a className={linkClass} href="/admin/logs" onClick={onNavigate}>Logs & Audit</a>
       <a className={linkClass} href="/admin/settings" onClick={onNavigate}>Settings</a>
         </div>
       </nav>

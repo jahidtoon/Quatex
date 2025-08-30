@@ -2,12 +2,16 @@
 import React, { useState, useEffect } from 'react';
 import AdminPageHeader from '../components/AdminPageHeader';
 import Card from '../components/Card';
+import AdminActionModal from '../components/AdminActionModal';
 
 export default function AdminTradesPage() {
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // all, active, completed, cancelled
   const [searchTerm, setSearchTerm] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalType, setModalType] = useState('view');
+  const [modalTrade, setModalTrade] = useState(null);
 
   // Mock data - replace with actual API call
   useEffect(() => {
@@ -33,6 +37,23 @@ export default function AdminTradesPage() {
   const totalPnL = filteredTrades.reduce((sum, trade) => sum + trade.pnl, 0);
   const activeTrades = trades.filter(t => t.status === 'active').length;
   const completedTrades = trades.filter(t => t.status === 'completed').length;
+
+  // Modal action handlers
+  const handleAction = (type, trade) => {
+    setModalType(type);
+    setModalTrade(trade);
+    setModalOpen(true);
+  };
+
+  const handleCloseTrade = () => {
+    alert(`Trade ${modalTrade.id} closed!`);
+    setModalOpen(false);
+  };
+
+  const handleCancelTrade = () => {
+    alert(`Trade ${modalTrade.id} cancelled!`);
+    setModalOpen(false);
+  };
 
   return (
     <div>
@@ -144,12 +165,17 @@ export default function AdminTradesPage() {
                     <td className="p-3 text-gray-400 text-xs">{trade.time}</td>
                     <td className="p-3">
                       <div className="flex gap-1">
-                        <button className="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs">
+                        <button className="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs" onClick={() => handleAction('view', trade)}>
                           View
                         </button>
                         {trade.status === 'active' && (
-                          <button className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs">
+                          <button className="px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs" onClick={() => handleAction('close', trade)}>
                             Close
+                          </button>
+                        )}
+                        {trade.status === 'active' && (
+                          <button className="px-2 py-1 bg-gray-600 hover:bg-gray-700 rounded text-xs" onClick={() => handleAction('cancel', trade)}>
+                            Cancel
                           </button>
                         )}
                       </div>
@@ -166,6 +192,46 @@ export default function AdminTradesPage() {
           </div>
         )}
       </Card>
+
+      {/* Action Modal */}
+      <AdminActionModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={modalType === 'view' ? 'Trade Details' : modalType === 'close' ? 'Close Trade' : 'Cancel Trade'}
+        actions={(() => {
+          if (!modalTrade) return null;
+          if (modalType === 'view') {
+            return <button className="px-4 py-2 bg-blue-600 text-white rounded-lg" onClick={() => setModalOpen(false)}>Close</button>;
+          }
+          if (modalType === 'close') {
+            return <>
+              <button className="px-4 py-2 bg-red-600 text-white rounded-lg" onClick={handleCloseTrade}>Close Trade</button>
+              <button className="px-4 py-2 bg-gray-600 text-white rounded-lg" onClick={() => setModalOpen(false)}>Cancel</button>
+            </>;
+          }
+          if (modalType === 'cancel') {
+            return <>
+              <button className="px-4 py-2 bg-gray-600 text-white rounded-lg" onClick={handleCancelTrade}>Cancel Trade</button>
+              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg" onClick={() => setModalOpen(false)}>Keep Open</button>
+            </>;
+          }
+        })()}
+      >
+        {modalTrade && (
+          <div className="space-y-2 text-left">
+            <div><span className="font-bold text-blue-400">Trade ID:</span> {modalTrade.id}</div>
+            <div><span className="font-bold text-blue-400">User:</span> {modalTrade.user}</div>
+            <div><span className="font-bold text-blue-400">Pair:</span> {modalTrade.pair}</div>
+            <div><span className="font-bold text-blue-400">Type:</span> {modalTrade.type}</div>
+            <div><span className="font-bold text-blue-400">Amount:</span> ${modalTrade.amount}</div>
+            <div><span className="font-bold text-blue-400">Entry Price:</span> {modalTrade.entry}</div>
+            <div><span className="font-bold text-blue-400">Current Price:</span> {modalTrade.current}</div>
+            <div><span className="font-bold text-blue-400">P&L:</span> <span className={modalTrade.pnl >= 0 ? 'text-green-400' : 'text-red-400'}>${modalTrade.pnl}</span></div>
+            <div><span className="font-bold text-blue-400">Status:</span> {modalTrade.status}</div>
+            <div><span className="font-bold text-blue-400">Time:</span> {modalTrade.time}</div>
+          </div>
+        )}
+      </AdminActionModal>
     </div>
   );
 }

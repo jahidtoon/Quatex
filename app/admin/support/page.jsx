@@ -2,9 +2,37 @@
 import React, { useState } from 'react';
 import AdminPageHeader from '../components/AdminPageHeader';
 import Card from '../components/Card';
+import AdminActionModal from '../components/AdminActionModal';
 
 export default function SupportPage() {
   const [selectedTicket, setSelectedTicket] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalType, setModalType] = useState('');
+  const [modalTicket, setModalTicket] = useState(null);
+
+  const handleTicketAction = (action, ticket) => {
+    setModalType(action);
+    setModalTicket(ticket);
+    setModalOpen(true);
+  };
+
+  const handleReplyTicket = (ticketId) => {
+    // Implementation for replying to ticket
+    console.log('Replying to ticket:', ticketId);
+    setModalOpen(false);
+  };
+
+  const handleResolveTicket = (ticketId) => {
+    // Implementation for resolving ticket
+    console.log('Resolving ticket:', ticketId);
+    setModalOpen(false);
+  };
+
+  const handleCloseTicket = (ticketId) => {
+    // Implementation for closing ticket
+    console.log('Closing ticket:', ticketId);
+    setModalOpen(false);
+  };
 
   // Mock support tickets data
   const tickets = [
@@ -138,7 +166,7 @@ export default function SupportPage() {
                           className="text-blue-400 hover:text-blue-300 text-sm"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedTicket(ticket);
+                            handleTicketAction('view', ticket);
                           }}
                         >
                           View
@@ -203,13 +231,22 @@ export default function SupportPage() {
                 </div>
 
                 <div className="flex gap-2 pt-4 border-t border-[#262b40]">
-                  <button className="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                  <button 
+                    onClick={() => handleTicketAction('reply', selectedTicket)}
+                    className="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                  >
                     Reply
                   </button>
-                  <button className="px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700">
+                  <button 
+                    onClick={() => handleTicketAction('resolve', selectedTicket)}
+                    className="px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                  >
                     Resolve
                   </button>
-                  <button className="px-3 py-2 bg-gray-600 text-white rounded text-sm hover:bg-gray-700">
+                  <button 
+                    onClick={() => handleTicketAction('close', selectedTicket)}
+                    className="px-3 py-2 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
+                  >
                     Close
                   </button>
                 </div>
@@ -244,6 +281,159 @@ export default function SupportPage() {
           </Card>
         </div>
       </div>
+
+      {/* Admin Action Modal */}
+      <AdminActionModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={
+          modalType === 'view' ? 'Ticket Details' :
+          modalType === 'reply' ? 'Reply to Ticket' :
+          modalType === 'resolve' ? 'Resolve Ticket' :
+          modalType === 'close' ? 'Close Ticket' : ''
+        }
+        content={
+          modalTicket && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-gray-400">Ticket ID</label>
+                  <p className="text-white font-medium">#{modalTicket.id}</p>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400">User Email</label>
+                  <p className="text-white">{modalTicket.user}</p>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400">Subject</label>
+                  <p className="text-white">{modalTicket.subject}</p>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400">Category</label>
+                  <p className="text-white">{modalTicket.category}</p>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400">Priority</label>
+                  <p className={
+                    modalTicket.priority === 'High' ? 'text-red-400' :
+                    modalTicket.priority === 'Medium' ? 'text-yellow-400' : 'text-green-400'
+                  }>
+                    {modalTicket.priority}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400">Status</label>
+                  <p className={
+                    modalTicket.status === 'Open' ? 'text-red-400' :
+                    modalTicket.status === 'In Progress' ? 'text-yellow-400' : 'text-green-400'
+                  }>
+                    {modalTicket.status}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400">Created</label>
+                  <p className="text-white">{modalTicket.created}</p>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400">Last Reply</label>
+                  <p className="text-white">{modalTicket.lastReply}</p>
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div>
+                <label className="text-sm text-gray-400 mb-2 block">Conversation</label>
+                <div className="max-h-60 overflow-y-auto space-y-3 bg-[#0f1320] border border-[#2a3142] rounded p-3">
+                  {modalTicket.messages?.map((message) => (
+                    <div key={message.id} className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-blue-400">{message.from}</span>
+                        <span className="text-xs text-gray-400">{message.timestamp}</span>
+                      </div>
+                      <div className="text-sm text-gray-300">{message.message}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              {modalType === 'reply' && (
+                <div className="mt-4">
+                  <label className="block text-sm text-gray-400 mb-2">Your Reply</label>
+                  <textarea 
+                    rows="4"
+                    placeholder="Type your reply here..."
+                    className="w-full px-3 py-2 bg-[#0f1320] border border-[#2a3142] rounded text-white placeholder-gray-400 resize-none"
+                  />
+                </div>
+              )}
+
+              {(modalType === 'resolve' || modalType === 'close') && (
+                <div className="mt-4 p-4 bg-yellow-600/10 border border-yellow-600/30 rounded">
+                  <p className="text-yellow-400 text-sm">
+                    {modalType === 'resolve' && 'Are you sure you want to resolve this ticket? This will mark it as completed.'}
+                    {modalType === 'close' && 'Are you sure you want to close this ticket? This action will close the ticket without resolution.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )
+        }
+        actions={
+          modalType === 'view' ? (
+            <button
+              onClick={() => setModalOpen(false)}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded"
+            >
+              Close
+            </button>
+          ) : modalType === 'reply' ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleReplyTicket(modalTicket?.id)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+              >
+                Send Reply
+              </button>
+            </div>
+          ) : modalType === 'resolve' ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleResolveTicket(modalTicket?.id)}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded"
+              >
+                Resolve Ticket
+              </button>
+            </div>
+          ) : modalType === 'close' ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleCloseTicket(modalTicket?.id)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded"
+              >
+                Close Ticket
+              </button>
+            </div>
+          ) : null
+        }
+      />
     </div>
   );
 }

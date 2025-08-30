@@ -8,9 +8,12 @@ export default function AdminUsersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedUsers, setSelectedUsers] = useState([]);
+  const [showBulkActions, setShowBulkActions] = useState(false);
+  const [sortField, setSortField] = useState('joinDate');
+  const [sortDirection, setSortDirection] = useState('desc');
 
   // Mock data for users
-  const users = [
+  const mockUsers = [
     {
       id: 1,
       name: 'John Smith',
@@ -97,7 +100,7 @@ export default function AdminUsersPage() {
     }
   ];
 
-  const filteredUsers = users.filter(user => {
+  const filteredUsers = mockUsers.filter(user => {
     const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.country.toLowerCase().includes(searchTerm.toLowerCase());
@@ -105,10 +108,10 @@ export default function AdminUsersPage() {
     return matchesSearch && matchesStatus;
   });
 
-  const totalUsers = users.length;
-  const activeUsers = users.filter(u => u.status === 'active').length;
-  const verifiedUsers = users.filter(u => u.verified).length;
-  const totalBalance = users.reduce((sum, u) => sum + u.balance, 0);
+  const totalUsers = mockUsers.length;
+  const activeUsers = mockUsers.filter(u => u.status === 'active').length;
+  const verifiedUsers = mockUsers.filter(u => u.verified).length;
+  const totalBalance = mockUsers.reduce((sum, u) => sum + u.balance, 0);
 
   const handleStatusChange = (userId, newStatus) => {
     // Here you would update the user status via API
@@ -116,8 +119,25 @@ export default function AdminUsersPage() {
   };
 
   const handleBulkAction = (action) => {
+    const selectedUserCount = selectedUsers.length;
+    const actionMessages = {
+      verify: `✅ ${selectedUserCount} user(s) verified successfully!`,
+      suspend: `🚫 ${selectedUserCount} user(s) suspended successfully!`,
+      activate: `🔓 ${selectedUserCount} user(s) activated successfully!`,
+      export: `📊 Exporting data for ${selectedUserCount} user(s)...`
+    };
+    
+    alert(actionMessages[action]);
     console.log(`Performing ${action} on users:`, selectedUsers);
     setSelectedUsers([]);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedUsers.length === filteredUsers.length) {
+      setSelectedUsers([]);
+    } else {
+      setSelectedUsers(filteredUsers.map(user => user.id));
+    }
   };
 
   const formatDate = (dateString) => {
@@ -181,6 +201,51 @@ export default function AdminUsersPage() {
           trend={{ value: 15.5, isPositive: true }}
         />
       </div>
+
+      {/* Bulk Actions */}
+      {selectedUsers.length > 0 && (
+        <div className="mb-4 p-4 bg-[#1a1f33] border border-[#262b40] rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <span className="text-white font-medium">
+                {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''} selected
+              </span>
+              <button 
+                onClick={() => setSelectedUsers([])}
+                className="text-gray-400 hover:text-white"
+              >
+                Clear selection
+              </button>
+            </div>
+            <div className="flex space-x-2">
+              <button 
+                onClick={() => handleBulkAction('verify')}
+                className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+              >
+                ✅ Verify
+              </button>
+              <button 
+                onClick={() => handleBulkAction('suspend')}
+                className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+              >
+                🚫 Suspend
+              </button>
+              <button 
+                onClick={() => handleBulkAction('activate')}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+              >
+                🔓 Activate
+              </button>
+              <button 
+                onClick={() => handleBulkAction('export')}
+                className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700"
+              >
+                📊 Export
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Card title="Users Management">
         {/* Filters and Search */}

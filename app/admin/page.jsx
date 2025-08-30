@@ -82,6 +82,14 @@ export default function AdminPage() {
               <div className="font-medium text-white">🎧 Support Tickets</div>
               <div className="text-sm text-gray-400">Manage customer support</div>
             </a>
+            <a href="/admin/live-monitoring" className="block p-3 bg-[#1a1f33] hover:bg-[#232945] rounded-lg transition-colors">
+              <div className="font-medium text-white">📊 Live Monitoring</div>
+              <div className="text-sm text-gray-400">Real-time platform monitoring</div>
+            </a>
+            <a href="/admin/risk-management" className="block p-3 bg-[#1a1f33] hover:bg-[#232945] rounded-lg transition-colors">
+              <div className="font-medium text-white">⚠️ Risk Management</div>
+              <div className="text-sm text-gray-400">Monitor risk exposure</div>
+            </a>
           </div>
         </Card>
 
