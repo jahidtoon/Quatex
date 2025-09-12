@@ -1,7 +1,7 @@
 // Professional icon mapping for sidebar menu
 export const menuIcons = {
   trade: { icon: 'fa-chart-line', color: 'text-blue-500', label: 'Trade' },
-  leaderboard: { icon: 'fa-trophy', color: 'text-yellow-400', label: 'Leader Board' },
+  leaderboard: { icon: 'fa-trophy', color: 'text-yellow-400', label: 'Leaderboard' },
   analytics: { icon: 'fa-chart-bar', color: 'text-cyan-400', label: 'Analytics' },
   top: { icon: 'fa-crown', color: 'text-yellow-500', label: 'TOP' },
   signals: { icon: 'fa-wifi', color: 'text-blue-400', label: 'Signals' },
@@ -9,6 +9,7 @@ export const menuIcons = {
   account: { icon: 'fa-user-circle', color: 'text-green-400', label: 'Account' },
   tournaments: { icon: 'fa-trophy', color: 'text-purple-400', label: 'Tournaments' },
   market: { icon: 'fa-store', color: 'text-pink-400', label: 'Market' },
+  affiliate: { icon: 'fa-handshake', color: 'text-green-500', label: 'Affiliate' },
 
   p2p: { icon: 'fa-exchange-alt', color: 'text-indigo-400', label: 'P2P' },
   deposit: { icon: 'fa-arrow-down', color: 'text-blue-400', label: 'Deposit' },

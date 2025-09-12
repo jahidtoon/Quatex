@@ -1,19 +1,25 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useAuth, useApi } from '@/lib/hooks';
 
 export default function AccountPage() {
+  const { user, token, isAuthenticated, updateUser } = useAuth();
+  const { apiCall } = useApi();
+  
   const [activeTab, setActiveTab] = useState('profile');
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState(false);
   const [profileData, setProfileData] = useState({
-    firstName: 'John',
-    lastName: 'Doe', 
-    email: 'john.doe@email.com',
-    phone: '+1 (555) 123-4567',
-    country: 'United States',
-    dateOfBirth: '1990-05-15',
-    address: '123 Main Street',
-    city: 'New York',
-    postalCode: '10001'
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    country: '',
+    dateOfBirth: '',
+    address: '',
+    city: '',
+    postalCode: ''
   });
 
   const [securitySettings, setSecuritySettings] = useState({
@@ -23,22 +29,154 @@ export default function AccountPage() {
     loginAlerts: true
   });
 
-  const accountStats = {
-    totalDeposits: 5420.50,
-    totalWithdrawals: 2150.75,
-    currentBalance: 8750.25,
-    totalTrades: 1247,
-    successRate: 68.5,
-    profitLoss: +2450.80
+  const [accountStats, setAccountStats] = useState({
+    totalDeposits: 0,
+    totalWithdrawals: 0,
+    currentBalance: 0,
+    totalTrades: 0,
+    successRate: 0,
+    profitLoss: 0
+  });
+
+  const [recentActivity, setRecentActivity] = useState([]);
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated && !loading) {
+      window.location.href = '/auth/login';
+      return;
+    }
+  }, [isAuthenticated, loading]);
+
+  // Load user profile data
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      loadProfileData();
+      loadStatsData();
+    }
+  }, [isAuthenticated, token]);
+
+  const loadProfileData = async () => {
+    try {
+      const response = await apiCall('/api/users/profile');
+      if (response.success) {
+        const userData = response.user;
+        setProfileData({
+          firstName: userData.first_name || '',
+          lastName: userData.last_name || '',
+          email: userData.email || '',
+          phone: userData.phone || '',
+          country: userData.country || '',
+          dateOfBirth: userData.date_of_birth || '',
+          address: userData.address || '',
+          city: userData.city || '',
+          postalCode: userData.postal_code || ''
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load profile:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const recentActivity = [
-    { id: 1, type: 'trade', description: 'BTCUSDT UP Trade', amount: '+$42.50', date: '2 hours ago', status: 'completed' },
-    { id: 2, type: 'deposit', description: 'Credit Card Deposit', amount: '+$500.00', date: '1 day ago', status: 'completed' },
-    { id: 3, type: 'trade', description: 'ETHUSD DOWN Trade', amount: '-$25.00', date: '1 day ago', status: 'completed' },
-    { id: 4, type: 'withdrawal', description: 'Bank Transfer Withdrawal', amount: '-$200.00', date: '3 days ago', status: 'pending' },
-    { id: 5, type: 'trade', description: 'XRPUSDT UP Trade', amount: '+$33.75', date: '3 days ago', status: 'completed' }
-  ];
+  const loadStatsData = async () => {
+    try {
+      const response = await apiCall('/api/users/stats');
+      if (response.success) {
+        setAccountStats(response.stats);
+        setRecentActivity(response.recentActivity);
+      }
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+    }
+  };
+
+  const handleProfileUpdate = async (e) => {
+    e.preventDefault();
+    setUpdating(true);
+
+    try {
+      const updateData = {
+        first_name: profileData.firstName,
+        last_name: profileData.lastName,
+        phone: profileData.phone,
+        country: profileData.country,
+        date_of_birth: profileData.dateOfBirth,
+        address: profileData.address,
+        city: profileData.city,
+        postal_code: profileData.postalCode
+      };
+
+      const response = await apiCall('/api/users/profile', {
+        method: 'PUT',
+        body: JSON.stringify(updateData)
+      });
+
+      if (response.success) {
+        // Update the user context
+        updateUser({
+          ...user,
+          firstName: response.user.first_name,
+          lastName: response.user.last_name
+        });
+        alert('Profile updated successfully!');
+      }
+    } catch (error) {
+      alert('Failed to update profile: ' + error.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  const formatTimeAgo = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      if (diffMins < 60) return `${diffMins} minutes ago`;
+      if (diffHours < 24) return `${diffHours} hours ago`;
+      return `${diffDays} days ago`;
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Redirecting to login...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p>Loading your account...</p>
+        </div>
+      </div>
+    );
+  }
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: 'fa-user' },
@@ -47,12 +185,6 @@ export default function AccountPage() {
     { id: 'verification', label: 'Verification', icon: 'fa-check-circle' },
     { id: 'preferences', label: 'Preferences', icon: 'fa-cog' }
   ];
-
-  const handleProfileUpdate = (e) => {
-    e.preventDefault();
-    console.log('Profile updated:', profileData);
-    alert('Profile updated successfully!');
-  };
 
   const getActivityIcon = (type) => {
     switch(type) {
@@ -247,10 +379,20 @@ export default function AccountPage() {
 
                   <button
                     type="submit"
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+                    disabled={updating}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center"
                   >
-                    <i className="fas fa-save mr-2"></i>
-                    Update Profile
+                    {updating ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-save mr-2"></i>
+                        Update Profile
+                      </>
+                    )}
                   </button>
                 </form>
               </div>
@@ -389,7 +531,7 @@ export default function AccountPage() {
                         </div>
                         <div>
                           <h3 className="font-semibold">{activity.description}</h3>
-                          <p className="text-sm text-gray-400">{activity.date}</p>
+                          <p className="text-sm text-gray-400">{formatTimeAgo(activity.date)}</p>
                         </div>
                       </div>
                       <div className="text-right">

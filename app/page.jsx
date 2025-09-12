@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from 'react';
+import { AuthProvider } from '../lib/AuthContext';
 
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
@@ -19,13 +20,14 @@ export default function Home() {
   const handleMenuToggle = () => setSidebarOpen((prev) => !prev);
   
   return (
-    <div className="flex flex-col h-screen bg-main text-main">
-      <div className="flex items-center">
-        <div className="md:hidden block p-2">
-          <HamburgerMenu isOpen={sidebarOpen} onToggle={handleMenuToggle} />
+    <AuthProvider>
+      <div className="flex flex-col h-screen bg-main text-main">
+        <div className="flex items-center">
+          <div className="md:hidden block p-2">
+            <HamburgerMenu isOpen={sidebarOpen} onToggle={handleMenuToggle} />
+          </div>
+          <Header setCurrentPage={setCurrentPage} />
         </div>
-        <Header setCurrentPage={setCurrentPage} />
-      </div>
   <div className="flex flex-1 overflow-hidden">
         {/* Sidebar: always visible on md+, toggled on mobile */}
   <div className={`z-40 ${sidebarOpen ? 'block fixed top-0 left-0 h-full' : 'hidden'} md:block transition-transform duration-300`}>
@@ -59,5 +61,6 @@ export default function Home() {
       {/* Live Chat Component */}
       <LiveChat />
     </div>
+    </AuthProvider>
   );
 }

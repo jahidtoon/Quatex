@@ -1,9 +1,9 @@
 // Prisma schema mapping আপনার sql.note এর টেবিল অনুযায়ী
-// Database: PostgreSQL (Self-hosted)
+// Database: SQLite (Development)
 
 datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL")
+    provider = "sqlite"
+    url      = "file:./dev.db"
 }
 
  generator client {
@@ -18,21 +18,21 @@ enum PairStatus {
 }
 
 model currency_pairs {
-    id           String     @id @default(uuid()) @db.Uuid
-    base         String     @db.Text
-    quote        String     @db.Text
-    symbol       String     @unique @db.Text   // e.g. EUR_USD canonical
-    display      String?    @db.Text           // UI label e.g. EUR/USD
-  provider     String?    @db.Text           // e.g. BINANCE | COINGECKO | SIMULATED | ALPHAVANTAGE
-  provider_symbol String? @db.Text           // symbol used at provider (e.g. BTCUSDT)
-  price_decimals Int?                     // dynamic precision for display/rounding
+    id           String     @id @default(uuid())
+    base         String
+    quote        String
+    symbol       String     @unique   // e.g. EUR_USD canonical
+    display      String?              // UI label e.g. EUR/USD
+  provider     String?              // e.g. BINANCE | COINGECKO | SIMULATED | ALPHAVANTAGE
+  provider_symbol String?           // symbol used at provider (e.g. BTCUSDT)
+  price_decimals Int?               // dynamic precision for display/rounding
     status       PairStatus @default(ACTIVE)
-    payout       Int?                       // percentage integer (e.g. 80 = 80%)
-    latest_price Decimal?    @db.Decimal
-    last_updated DateTime?   @db.Timestamptz(6)
+    payout       Int?                 // percentage integer (e.g. 80 = 80%)
+    latest_price Decimal?
+    last_updated DateTime?
     isDeleted    Boolean     @default(false)
-    created_at   DateTime    @default(now()) @db.Timestamptz(6)
-    updated_at   DateTime    @updatedAt @db.Timestamptz(6)
+    created_at   DateTime    @default(now())
+    updated_at   DateTime    @updatedAt
 
     @@index([status])
     @@index([isDeleted])
@@ -41,34 +41,40 @@ model currency_pairs {
 
 // --- Stored Candles (1m base + higher intervals) ---
 model forex_candles {
-  id        String   @id @default(uuid()) @db.Uuid
-  symbol    String   @db.Text            // internal symbol e.g. EUR_USD
-  interval  String   @db.Text            // '1m','5m','15m','1h','4h','1d'
-  time      DateTime @db.Timestamptz(6)  // candle open time
-  open      Decimal  @db.Decimal
-  high      Decimal  @db.Decimal
-  low       Decimal  @db.Decimal
-  close     Decimal  @db.Decimal
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  updated_at DateTime @updatedAt @db.Timestamptz(6)
+  id        String   @id @default(uuid())
+  symbol    String               // internal symbol e.g. EUR_USD
+  interval  String               // '1m','5m','15m','1h','4h','1d'
+  time      DateTime             // candle open time
+  open      Decimal
+  high      Decimal
+  low       Decimal
+  close     Decimal  
+  created_at DateTime @default(now()) 
+  updated_at DateTime @updatedAt 
 
   @@unique([symbol, interval, time])
   @@index([symbol, interval, time])
 }
 
  model users {
-    id         String   @id @default(uuid()) @db.Uuid
-  name       String?  @db.Text
-  first_name String?  @db.Text
-  last_name  String?  @db.Text
-  email      String   @unique @db.Text
-  password_hash String? @db.Text
-  phone      String?  @db.Text
-  country    String?  @db.Text
+    id         String   @id @default(uuid()) 
+  name       String?  
+  first_name String?  
+  last_name  String?  
+  email      String   @unique 
+  password_hash String? 
+  phone      String?  
+  country    String?  
+  date_of_birth String? 
+  address    String?  
+  city       String?  
+  postal_code String? 
+  balance    Decimal? @default(0) 
     is_verified Boolean  @default(false)
     is_admin   Boolean   @default(false)
-  avatar_url String?  @db.Text
-  created_at DateTime @default(now()) @db.Timestamptz(6)
+  avatar_url String?  
+  created_at DateTime @default(now()) 
+  updated_at DateTime @updatedAt 
   deposits        deposits[]
   withdrawals     withdrawals[]
   trades          trades[]
@@ -79,87 +85,87 @@ model forex_candles {
  }
 
  model deposits {
-    id         String   @id @default(uuid()) @db.Uuid
-  user_id    String?  @db.Uuid
-  amount     Decimal? @db.Decimal
-  method     String?  @db.Text
-  status     String?  @db.Text
-  created_at DateTime @default(now()) @db.Timestamptz(6)
+    id         String   @id @default(uuid()) 
+  user_id    String?  
+  amount     Decimal? 
+  method     String?  
+  status     String?  
+  created_at DateTime @default(now()) 
   users users? @relation(fields: [user_id], references: [id])
   @@index([user_id])
  }
 
  model withdrawals {
-    id          String   @id @default(uuid()) @db.Uuid
-  user_id     String?  @db.Uuid
-  amount      Decimal? @db.Decimal
-  method      String?  @db.Text
+    id          String   @id @default(uuid()) 
+  user_id     String?  
+  amount      Decimal? 
+  method      String?  
   account_info Json?
-  status      String?  @db.Text
-  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  status      String?  
+  created_at  DateTime @default(now()) 
   users users? @relation(fields: [user_id], references: [id])
   @@index([user_id])
  }
 
  model trades {
-    id         String   @id @default(uuid()) @db.Uuid
-  user_id    String?  @db.Uuid
-  symbol     String?  @db.Text
-  amount     Decimal? @db.Decimal
-  direction  String?  @db.Text
-  open_time  DateTime? @db.Timestamptz(6)
-  close_time DateTime? @db.Timestamptz(6)
-  result     String?  @db.Text
+    id         String   @id @default(uuid()) 
+  user_id    String?  
+  symbol     String?  
+  amount     Decimal? 
+  direction  String?  
+  open_time  DateTime? 
+  close_time DateTime? 
+  result     String?  
   users users? @relation(fields: [user_id], references: [id])
   @@index([user_id])
  }
 
  model leaderboard {
-    id         String   @id @default(uuid()) @db.Uuid
-  user_id    String?  @db.Uuid
-  amount     Decimal? @db.Decimal
+    id         String   @id @default(uuid()) 
+  user_id    String?  
+  amount     Decimal? 
   rank       Int?
-  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) 
   users users? @relation(fields: [user_id], references: [id])
   @@index([user_id])
  }
 
  model tournaments {
-    id           String   @id @default(uuid()) @db.Uuid
-  title        String?  @db.Text
-  prize_pool   Decimal? @db.Decimal
-  entry_fee    Decimal? @db.Decimal
+    id           String   @id @default(uuid()) 
+  title        String?  
+  prize_pool   Decimal? 
+  entry_fee    Decimal? 
   participants Int?
-  duration     String?  @db.Text
-  status       String?  @db.Text
-  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  duration     String?  
+  status       String?  
+  created_at   DateTime @default(now()) 
  }
 
  model support_messages {
-    id         String   @id @default(uuid()) @db.Uuid
-  user_id    String?  @db.Uuid
-  name       String?  @db.Text
-  email      String?  @db.Text
-  subject    String?  @db.Text
-  message    String?  @db.Text
-  created_at DateTime @default(now()) @db.Timestamptz(6)
+    id         String   @id @default(uuid()) 
+  user_id    String?  
+  name       String?  
+  email      String?  
+  subject    String?  
+  message    String?  
+  created_at DateTime @default(now()) 
   users users? @relation(fields: [user_id], references: [id])
   @@index([user_id])
  }
 
  model chat_messages {
-    id         String   @id @default(uuid()) @db.Uuid
-  user_id    String?  @db.Uuid
-  sender     String?  @db.Text
-  message    String?  @db.Text
-  time       DateTime @default(now()) @db.Timestamptz(6)
+    id         String   @id @default(uuid()) 
+  user_id    String?  
+  sender     String?  
+  message    String?  
+  time       DateTime @default(now()) 
   users users? @relation(fields: [user_id], references: [id])
   @@index([user_id])
  }
 
  model settings {
-    id            String   @id @default(uuid()) @db.Uuid
-  user_id       String?  @db.Uuid
+    id            String   @id @default(uuid()) 
+  user_id       String?  
   notifications Boolean? @default(false)
   private       Boolean? @default(false)
   users users? @relation(fields: [user_id], references: [id])

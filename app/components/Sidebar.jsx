@@ -12,16 +12,17 @@ const SidebarLink = ({ page, currentPage, setCurrentPage, showLabel, extraClasse
     
     // For certain pages, navigate to their dedicated routes instead of using MainContent
     const dedicatedRoutes = [
-      'trade', 'analytics', 'top', 'support', 'account', 
+      'analytics', 'top', 'support', 'account', 
       'tournaments', 'p2p', 'deposit', 'withdrawal', 
-      'transactions', 'settings', 'join-us'
+      'transactions', 'settings', 'join-us', 'signals',
+      'leaderboard', 'affiliate'
     ];
     
     if (dedicatedRoutes.includes(page)) {
       // Navigate to dedicated page route
       window.location.href = `/${page}`;
     } else {
-      // Use existing MainContent system
+      // Use existing MainContent system for trade and other pages
       setCurrentPage(page);
     }
   };
@@ -78,6 +79,7 @@ const Sidebar = ({ currentPage, setCurrentPage }) => {
     { page: 'account' },
     { page: 'tournaments', badge: 4 },
     { page: 'p2p' },
+    { page: 'affiliate' },
   ];
 
   const bottomMenu = [
