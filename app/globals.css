@@ -2,9 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Import chart styles */
-@import './charts/styles.css';
-
 /* Global improvements */
 * {
   box-sizing: border-box;
@@ -66,26 +63,7 @@ body { @apply bg-main text-main; }
 .sidebar-link.active { @apply bg-blue-600 text-white shadow-lg; }
 .icon { @apply text-2xl; }
 
-/* Enhanced Chart Styling */
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-
-/* Custom scrollbar for chart areas */
-.custom-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #4B5563 #1F2937;
-}
-
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* Custom scrollbar styles */
 
 .custom-scrollbar::-webkit-scrollbar-track {
   background: #1F2937;
@@ -99,6 +77,15 @@ body { @apply bg-main text-main; }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #6B7280;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* Smooth hover effects */

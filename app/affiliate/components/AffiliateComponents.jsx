@@ -81,43 +81,6 @@ export const ReferralLinkGenerator = ({ affiliateId }) => {
   );
 };
 
-export const EarningsChart = ({ earningsData }) => {
-  return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Earnings Overview</h3>
-      
-      <div className="h-64 bg-gray-50 rounded-lg flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-4xl text-gray-400 mb-2">📊</div>
-          <p className="text-gray-500">Chart will be implemented with a charting library</p>
-          <p className="text-sm text-gray-400 mt-1">
-            Integration with Chart.js or similar library needed
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="text-center">
-          <p className="text-2xl font-bold text-green-600">$2,840</p>
-          <p className="text-sm text-gray-500">This Month</p>
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-bold text-blue-600">$15,420</p>
-          <p className="text-sm text-gray-500">Total Earned</p>
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-bold text-purple-600">156</p>
-          <p className="text-sm text-gray-500">Total Referrals</p>
-        </div>
-        <div className="text-center">
-          <p className="text-2xl font-bold text-orange-600">45%</p>
-          <p className="text-sm text-gray-500">Commission Rate</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export const CommissionTiers = ({ currentTier, totalReferrals }) => {
   const tiers = [
     { name: 'Bronze', minReferrals: 0, maxReferrals: 50, commission: 30, color: 'bg-orange-500' },

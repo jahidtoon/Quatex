@@ -44,6 +44,7 @@ export default function AdminSidebar({ className = '', id = 'admin-sidebar', onN
       <a className={linkClass} href="/admin/trades" onClick={onNavigate}>Trades</a>
       <a className={linkClass} href="/admin/deposits" onClick={onNavigate}>Deposits</a>
       <a className={linkClass} href="/admin/withdrawals" onClick={onNavigate}>Withdrawals</a>
+  <a className={linkClass} href="/admin/wallet" onClick={onNavigate}>Wallet</a>
       <a className={linkClass} href="/admin/support" onClick={onNavigate}>Support</a>
         </div>
         <div>
@@ -57,10 +58,17 @@ export default function AdminSidebar({ className = '', id = 'admin-sidebar', onN
       <a className={linkClass} href="/admin/tournaments" onClick={onNavigate}>Tournaments</a>
         </div>
         <div>
+          <div className="text-xs uppercase tracking-wider text-gray-400 mb-1 px-1">P2P</div>
+          <a className={linkClass} href="/admin/p2p/offers" onClick={onNavigate}>P2P Offers</a>
+          <a className={linkClass} href="/admin/p2p/orders" onClick={onNavigate}>P2P Orders</a>
+          <a className={linkClass} href="/admin/p2p/disputes" onClick={onNavigate}>P2P Disputes</a>
+        </div>
+        <div>
           <div className="text-xs uppercase tracking-wider text-gray-400 mb-1 px-1">System</div>
       <a className={linkClass} href="/admin/system" onClick={onNavigate}>System</a>
       <a className={linkClass} href="/admin/risk-management" onClick={onNavigate}>Risk Management</a>
       <a className={linkClass} href="/admin/notifications" onClick={onNavigate}>Notifications</a>
+      <a className={linkClass} href="/admin/billing" onClick={onNavigate}>Billing Settings</a>
       <a className={linkClass} href="/admin/logs" onClick={onNavigate}>Logs & Audit</a>
       <a className={linkClass} href="/admin/settings" onClick={onNavigate}>Settings</a>
         </div>

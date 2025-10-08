@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
-  faUsers, faDollarSign, faChartLine, faHandshake,
+  faUsers, faDollarSign, faHandshake,
   faTrophy, faGift, faRocket, faCheckCircle,
   faArrowRight, faStar
 } from '@fortawesome/free-solid-svg-icons';
@@ -23,7 +23,7 @@ export default function AffiliatePage() {
       color: 'text-blue-500'
     },
     {
-      icon: faChartLine,
+      icon: faTrophy,
       title: 'Real-time Analytics',
       description: 'Track your performance with detailed reports',
       color: 'text-purple-500'

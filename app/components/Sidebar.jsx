@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import SidebarHamburger from './SidebarHamburger';
 import { menuIcons } from './SidebarIcons';
 
-const SidebarLink = ({ page, currentPage, setCurrentPage, showLabel, extraClasses = '', badge }) => {
+const SidebarLink = ({ page, currentPage, setCurrentPage, showLabel, extraClasses = '', badge, collapsed }) => {
   const { icon, color, label } = menuIcons[page] || {};
+  const router = useRouter();
   
   const handleClick = (e) => {
     e.preventDefault();
@@ -19,11 +21,15 @@ const SidebarLink = ({ page, currentPage, setCurrentPage, showLabel, extraClasse
     ];
     
     if (dedicatedRoutes.includes(page)) {
-      // Navigate to dedicated page route
-      window.location.href = `/${page}`;
+      // Navigate to dedicated page route using Next.js router for client-side navigation
+      router.push(`/${page}`);
     } else {
       // Use existing MainContent system for trade and other pages
-      setCurrentPage(page);
+      if (page === 'trade') {
+        router.push('/');
+      } else {
+        setCurrentPage(page);
+      }
     }
   };
 
@@ -31,7 +37,8 @@ const SidebarLink = ({ page, currentPage, setCurrentPage, showLabel, extraClasse
     <a
       onClick={handleClick}
       href="#"
-      className={`sidebar-link flex flex-col items-center justify-center py-3 font-semibold ${currentPage === page ? 'active' : ''} ${extraClasses}`}
+      title={!showLabel && label ? label : undefined}
+      className={`sidebar-link flex flex-col items-center justify-center ${collapsed ? 'py-2' : 'py-3'} font-semibold transition-colors ${currentPage === page ? 'active' : ''} ${extraClasses}`}
     >
       <div className="relative flex flex-col items-center">
         <i className={`fas ${icon} icon text-2xl ${currentPage === page ? 'text-white' : color || 'text-main'}`} />
@@ -75,8 +82,6 @@ const Sidebar = ({ currentPage, setCurrentPage }) => {
     { page: 'trade' },
     { page: 'analytics' },
     { page: 'top' },
-    { page: 'support' },
-    { page: 'account' },
     { page: 'tournaments', badge: 4 },
     { page: 'p2p' },
     { page: 'affiliate' },
@@ -89,12 +94,12 @@ const Sidebar = ({ currentPage, setCurrentPage }) => {
   ];
 
   return (
-    <aside className={`transition-all duration-300 bg-[#1a2036] h-screen flex flex-col justify-between items-center py-4 ${expanded ? 'w-40 md:w-48' : 'w-16'}`}>
+  <aside className={`transition-all duration-300 bg-[#1a2036] h-full min-h-0 flex flex-col justify-between items-center py-4 ${expanded ? 'overflow-hidden' : 'overflow-y-hidden'} ${expanded ? 'w-32 md:w-40' : 'w-14'}`}>
       {/* Hamburger always visible at top */}
-      <div className="w-full flex justify-center items-center mb-4">
+      <div className="w-full flex justify-center items-center mb-4 flex-shrink-0">
         <SidebarHamburger isOpen={expanded} onToggle={() => setExpanded((prev) => !prev)} />
       </div>
-      <div className={`flex flex-col items-center gap-4 flex-1 w-full transition-all duration-300 ${expanded ? 'px-2' : 'px-0'}`}>
+      <div className={`flex flex-col items-center gap-3 flex-1 w-full min-h-0 ${expanded ? 'overflow-y-auto' : 'overflow-visible'} transition-all duration-300 ${expanded ? 'px-2' : 'px-0'}`}>
         {navItems.map(item => (
           <SidebarLink
             key={item.page}
@@ -103,11 +108,12 @@ const Sidebar = ({ currentPage, setCurrentPage }) => {
             currentPage={currentPage}
             setCurrentPage={setCurrentPage}
             showLabel={expanded}
+            collapsed={!expanded}
             extraClasses={item.page === 'market' ? 'bg-blue-600 text-white shadow-lg' : ''}
           />
         ))}
       </div>
-      <div className={`w-full flex flex-col items-center border-t border-gray-700 pt-4 gap-2 transition-all duration-300 ${expanded ? 'px-2' : 'px-0'}`}>
+      <div className={`w-full flex flex-col items-center border-t border-gray-700 pt-4 gap-2 transition-all duration-300 flex-shrink-0 ${expanded ? 'px-2' : 'px-0'}`}>
         {/* Footer round icon buttons */}
         <div className={`flex ${expanded ? 'flex-row' : 'flex-col'} items-center justify-center gap-2 mb-2`}>
           <button

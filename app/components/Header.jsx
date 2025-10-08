@@ -1,13 +1,16 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useClickOutside } from '../../lib/useClickOutside';
 import { useAuth } from '../../lib/AuthContext';
+import { useApi } from '../../lib/hooks';
 
 const Header = ({ setCurrentPage }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showSignupModal, setShowSignupModal] = useState(false);
-  const { user, login, logout, loading } = useAuth();
+  const { user, token, login, logout, loading } = useAuth();
+  const { apiCall } = useApi();
+  const [liveBalance, setLiveBalance] = useState(null);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [signupForm, setSignupForm] = useState({ 
     firstName: '', 
@@ -120,6 +123,34 @@ const Header = ({ setCurrentPage }) => {
     window.location.href = '/withdrawal';
   };
 
+  // Fetch fresh live account balance so header doesn't show 0.00 from stale user context
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchBalance = async () => {
+      if (!user || !token) return;
+      try {
+        const resp = await apiCall('/api/users/stats');
+        const bal = Number(resp?.stats?.currentBalance ?? 0);
+        if (!cancelled) setLiveBalance(bal);
+      } catch (_) {
+        // ignore; fallback to user.balance
+      }
+    };
+
+    if (user) {
+      fetchBalance();
+      // light polling to keep it reasonably fresh while user is active
+      const id = setInterval(fetchBalance, 15000);
+      return () => {
+        cancelled = true;
+        clearInterval(id);
+      };
+    } else {
+      setLiveBalance(null);
+    }
+  }, [user, token]);
+
   return (
     <header className="w-full max-w-none bg-[#2a3142] flex items-center justify-between px-4 py-3 border-b border-gray-700 shadow-lg flex-shrink-0">
       <div className="flex items-center space-x-4">
@@ -139,7 +170,9 @@ const Header = ({ setCurrentPage }) => {
               {user ? 'LIVE ACCOUNT' : 'DEMO ACCOUNT'}
             </div>
             <div className="text-white font-bold">
-              {user ? `$${user.balance || '0.00'}` : '$10,000.00'}
+              {user
+                ? `$${Number((liveBalance ?? user?.balance) ?? 0).toFixed(2)}`
+                : '$10,000.00'}
             </div>
           </div>
         </div>

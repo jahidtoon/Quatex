@@ -1,6 +1,6 @@
 # Quatex Trading UI (Initial)
 
-Initial Next.js 14 + Tailwind scaffold replicating the provided React UI layout (header, sidebar, trade page with chart & trade panel). Other pages are placeholders for now.
+Initial Next.js 14 + Tailwind scaffold replicating the provided React UI layout (header, sidebar, trade page with trading interface). Other pages are placeholders for now.
 
 ## Scripts
 - dev: Start dev server

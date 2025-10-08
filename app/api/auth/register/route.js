@@ -69,6 +69,8 @@ export async function POST(request) {
         phone,
         country,
         is_verified: false,
+        balance: 0,
+        demo_balance: 10000,
       }
     });
 
@@ -80,7 +82,9 @@ export async function POST(request) {
         firstName: created.first_name,
         lastName: created.last_name,
         email: created.email,
-        isVerified: created.is_verified
+        isVerified: created.is_verified,
+        balance: Number(created.balance || 0),
+        demoBalance: Number(created.demo_balance || 0)
       }
     });
 

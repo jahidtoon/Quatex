@@ -37,7 +37,7 @@ export default function Error404() {
             href="/analytics"
             className="p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
           >
-            <i className="fas fa-chart-bar text-2xl text-blue-400 mb-2"></i>
+            <i className="fas fa-chart-pie text-2xl text-blue-400 mb-2"></i>
             <div className="text-sm">Analytics</div>
           </Link>
           

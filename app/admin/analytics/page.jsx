@@ -1,56 +1,63 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminPageHeader from '../components/AdminPageHeader';
 import Card from '../components/Card';
 import StatCard from '../components/StatCard';
 
+const formatNumber = (value) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return '0';
+  return Number(value).toLocaleString();
+};
+
+const formatCurrency = (value) => {
+  if (!value) return '$0';
+  if (Math.abs(value) >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`;
+  if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(value) >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  return `$${Number(value).toLocaleString()}`;
+};
+
+const formatPercentage = (value) => `${(value ?? 0).toFixed(1)}%`;
+
 export default function AnalyticsPage() {
   const [timeFrame, setTimeFrame] = useState('7d');
   const [reportType, setReportType] = useState('overview');
+  const [analytics, setAnalytics] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Mock analytics data
-  const analytics = {
-    users: {
-      total: 15420,
-      new: 342,
-      active: 8950,
-      verified: 12100
-    },
-    trading: {
-      totalVolume: 2450000,
-      totalTrades: 98765,
-      avgTradeSize: 245,
-      successRate: 67.8
-    },
-    financial: {
-      revenue: 125000,
-      deposits: 890000,
-      withdrawals: 654000,
-      profit: 65000
-    },
-    performance: {
-      serverUptime: 99.8,
-      avgResponseTime: 145,
-      errorRate: 0.02,
-      activeSessions: 1250
+  const fetchAnalytics = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/admin/analytics', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Failed to load analytics (${response.status})`);
+      const payload = await response.json();
+      setAnalytics(payload);
+    } catch (err) {
+      setError(err.message || 'Unable to load analytics');
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
-  const topTraders = [
-    { rank: 1, name: 'Michael Chen', profit: 15420, trades: 156, winRate: 89.2 },
-    { rank: 2, name: 'Sarah Williams', profit: 12890, trades: 143, winRate: 84.6 },
-    { rank: 3, name: 'David Rodriguez', profit: 11230, trades: 189, winRate: 76.8 },
-    { rank: 4, name: 'Emma Thompson', profit: 9870, trades: 134, winRate: 82.1 },
-    { rank: 5, name: 'Alex Johnson', profit: 8945, trades: 167, winRate: 73.5 }
-  ];
+  useEffect(() => {
+    fetchAnalytics();
+  }, [fetchAnalytics]);
 
-  const popularPairs = [
-    { symbol: 'EUR/USD', volume: 345000, trades: 12450, change: 12.5 },
-    { symbol: 'GBP/USD', volume: 289000, trades: 9870, change: 8.3 },
-    { symbol: 'USD/JPY', volume: 234000, trades: 8920, change: -2.1 },
-    { symbol: 'AUD/USD', volume: 198000, trades: 7650, change: 15.7 },
-    { symbol: 'USD/CHF', volume: 167000, trades: 6540, change: 4.2 }
-  ];
+  const userMetrics = useMemo(() => {
+    if (!analytics?.users) return null;
+    const { total = 0, verified = 0, unverified = 0 } = analytics.users;
+    const computedUnverified = unverified || Math.max(total - verified, 0);
+    const verificationRate = total ? (verified / total) * 100 : 0;
+    return { total, verified, unverified: computedUnverified, verificationRate };
+  }, [analytics]);
+
+  const tradingMetrics = analytics?.trading;
+  const financialMetrics = analytics?.financial;
+  const topTraders = analytics?.topTraders || [];
+  const popularPairs = analytics?.popularPairs || [];
+  const recentTrades = analytics?.recentTrades || [];
 
   const getTimeFrameLabel = (tf) => {
     switch(tf) {
@@ -63,7 +70,6 @@ export default function AnalyticsPage() {
   };
 
   const exportReport = () => {
-    // Mock export functionality
     alert(`Exporting ${reportType} report for ${getTimeFrameLabel(timeFrame)}`);
   };
 
@@ -113,33 +119,213 @@ export default function AnalyticsPage() {
         </button>
       </div>
 
+      {error && (
+        <Card className="mb-6 border border-red-500/40 bg-red-500/10">
+          <div className="text-sm text-red-200 flex items-center justify-between">
+            <span>{error}</span>
+            <button
+              onClick={fetchAnalytics}
+              className="px-3 py-1 bg-red-500/20 border border-red-500/40 rounded-lg hover:bg-red-500/30"
+            >
+              Retry
+            </button>
+          </div>
+        </Card>
+      )}
+
       {/* Key Metrics Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <StatCard 
-          title="Total Users" 
-          value={analytics.users.total.toLocaleString()} 
-          icon="👥"
-          trend={{ value: 8.5, isPositive: true }}
+        <StatCard
+          label="Total Users"
+          value={formatNumber(userMetrics?.total)}
+          hint={`${formatNumber(userMetrics?.verified)} verified`}
         />
-        <StatCard 
-          title="Trading Volume" 
-          value={`$${(analytics.trading.totalVolume / 1000000).toFixed(1)}M`} 
-          icon="📈"
-          trend={{ value: 15.2, isPositive: true }}
+        <StatCard
+          label="Trading Volume"
+          value={formatCurrency(tradingMetrics?.totalVolume)}
+          hint={`${formatNumber(tradingMetrics?.totalTrades)} trades`}
         />
-        <StatCard 
-          title="Revenue" 
-          value={`$${analytics.financial.revenue.toLocaleString()}`} 
-          icon="💰"
-          trend={{ value: 22.3, isPositive: true }}
+        <StatCard
+          label="Average Trade Size"
+          value={formatCurrency(tradingMetrics?.averageTradeSize)}
+          hint="Across all trades"
         />
-        <StatCard 
-          title="Server Uptime" 
-          value={`${analytics.performance.serverUptime}%`} 
-          icon="🖥️"
-          trend={{ value: 0.1, isPositive: true }}
+        <StatCard
+          label="Net Deposits"
+          value={formatCurrency(financialMetrics?.netDeposits)}
+          hint={`${formatCurrency(financialMetrics?.totalDeposits)} deposits`}
         />
       </div>
+
+      {loading ? (
+        <div className="p-12 bg-[#151a2e] border border-[#262b40] rounded-xl text-center text-gray-400">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto mb-3" />
+          Loading analytics data...
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            {/* User Analytics */}
+            <Card title="User Analytics">
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-[#101527] p-4 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-400">{formatNumber(userMetrics?.verified)}</div>
+                    <div className="text-sm text-gray-400">Verified Users</div>
+                    <div className="text-xs text-gray-400 mt-1">{formatPercentage(userMetrics?.verificationRate)} verification rate</div>
+                  </div>
+                  <div className="bg-[#101527] p-4 rounded-lg">
+                    <div className="text-2xl font-bold text-yellow-400">{formatNumber(userMetrics?.unverified)}</div>
+                    <div className="text-sm text-gray-400">Unverified Users</div>
+                    <div className="text-xs text-gray-400 mt-1">{formatNumber(userMetrics?.total)} total</div>
+                  </div>
+                </div>
+                <div className="bg-[#101527] p-4 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm text-gray-400">Verification Progress</span>
+                    <span className="text-sm text-white">{formatPercentage(userMetrics?.verificationRate)}</span>
+                  </div>
+                  <div className="w-full bg-[#262b40] rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full"
+                      style={{ width: `${Math.min(userMetrics?.verificationRate || 0, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Trading Performance */}
+            <Card title="Trading Performance">
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="bg-[#101527] p-4 rounded-lg">
+                    <div className="text-2xl font-bold text-purple-400">{formatNumber(tradingMetrics?.totalTrades)}</div>
+                    <div className="text-sm text-gray-400">Total Trades</div>
+                    <div className="text-xs text-gray-400 mt-1">Across all pairs</div>
+                  </div>
+                  <div className="bg-[#101527] p-4 rounded-lg">
+                    <div className="text-2xl font-bold text-green-400">{formatCurrency(tradingMetrics?.averageTradeSize)}</div>
+                    <div className="text-sm text-gray-400">Avg Trade Size</div>
+                    <div className="text-xs text-gray-400 mt-1">Mean trade amount</div>
+                  </div>
+                </div>
+                <div className="bg-[#101527] p-4 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm text-gray-400">Total Volume</span>
+                    <span className="text-sm text-white">{formatCurrency(tradingMetrics?.totalVolume)}</span>
+                  </div>
+                  <div className="text-xs text-gray-400">Includes open and closed trades</div>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            {/* Top Traders */}
+            <Card title="Top Performers">
+              <div className="p-6">
+                {topTraders.length === 0 ? (
+                  <div className="text-center text-gray-400">No leaderboard data available.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {topTraders.map((trader, index) => (
+                      <div key={`${trader.userId || trader.email}-${index}`} className="flex items-center justify-between p-3 bg-[#101527] rounded-lg">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm font-bold">
+                            {trader.rank ?? index + 1}
+                          </div>
+                          <div>
+                            <div className="font-medium text-white">{trader.name}</div>
+                            <div className="text-xs text-gray-400">{formatNumber(trader.trades)} trades</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-green-400">{formatCurrency(trader.volume)}</div>
+                          <div className="text-xs text-gray-400">{trader.email}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            {/* Popular Currency Pairs */}
+            <Card title="Popular Currency Pairs">
+              <div className="p-6">
+                {popularPairs.length === 0 ? (
+                  <div className="text-center text-gray-400">No trading pair data available.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {popularPairs.map((pair, index) => (
+                      <div key={pair.symbol || index} className="flex items-center justify-between p-3 bg-[#101527] rounded-lg">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-xs font-bold">
+                            {index + 1}
+                          </div>
+                          <div>
+                            <div className="font-medium text-white">{pair.symbol}</div>
+                            <div className="text-xs text-gray-400">{formatNumber(pair.trades)} trades</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-blue-400">{formatCurrency(pair.volume)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
+
+          <Card title="Recent Trades">
+            <div className="p-6">
+              {recentTrades.length === 0 ? (
+                <div className="text-center text-gray-400">No recent trades recorded.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[#101527] text-gray-300">
+                      <tr>
+                        <th className="text-left p-3">ID</th>
+                        <th className="text-left p-3">User</th>
+                        <th className="text-left p-3">Symbol</th>
+                        <th className="text-left p-3">Direction</th>
+                        <th className="text-left p-3">Amount</th>
+                        <th className="text-left p-3">Opened</th>
+                        <th className="text-left p-3">Result</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentTrades.map((trade) => (
+                        <tr key={trade.id} className="border-b border-[#262b40] hover:bg-[#1a1f33]">
+                          <td className="p-3 font-mono">#{trade.id}</td>
+                          <td className="p-3">{trade.user}</td>
+                          <td className="p-3 font-semibold">{trade.symbol}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                              trade.direction === 'BUY'
+                                ? 'bg-green-500/20 text-green-400'
+                                : 'bg-red-500/20 text-red-400'
+                            }`}>
+                              {trade.direction}
+                            </span>
+                          </td>
+                          <td className="p-3">{formatCurrency(trade.amount)}</td>
+                          <td className="p-3 text-gray-400 text-xs">{new Date(trade.openTime).toLocaleString()}</td>
+                          <td className="p-3 text-xs text-gray-300">{(trade.result || 'open').toUpperCase()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </Card>
+        </>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* User Analytics */}

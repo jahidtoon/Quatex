@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from 'react';
 import Link from 'next/link';
+import MainAppLayout from '../components/MainAppLayout';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState({
@@ -19,7 +20,6 @@ export default function SettingsPage() {
     trading: {
       autoClose: false,
       soundEffects: true,
-      chartType: 'candlestick',
       defaultTimeframe: '1m',
       riskLevel: 'medium'
     },
@@ -47,7 +47,8 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <MainAppLayout>
+      <div className="bg-gray-900 text-white">
       <div className="bg-gray-800 border-b border-gray-700 p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -205,18 +206,6 @@ export default function SettingsPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Default Chart Type</label>
-                  <select
-                    value={settings.trading.chartType}
-                    onChange={(e) => handleSettingChange('trading', 'chartType', e.target.value)}
-                    className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="candlestick">Candlestick</option>
-                    <option value="line">Line Chart</option>
-                    <option value="area">Area Chart</option>
-                  </select>
-                </div>
-                <div>
                   <label className="block text-sm font-medium mb-2">Default Timeframe</label>
                   <select
                     value={settings.trading.defaultTimeframe}
@@ -318,5 +307,6 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+    </MainAppLayout>
   );
 }

@@ -16,7 +16,7 @@ export async function POST(request) {
     }
 
     // 1) Find user by email
-    const user = await prisma.users.findUnique({ where: { email } });
+  const user = await prisma.users.findUnique({ where: { email } });
 
     if (!user || !user.password_hash) {
       return NextResponse.json(
@@ -34,8 +34,16 @@ export async function POST(request) {
       );
     }
 
+    // 2.5) Block suspended users
+    if (user.is_suspended) {
+      return NextResponse.json(
+        { error: 'Account is suspended. Please contact support.' },
+        { status: 403 }
+      );
+    }
+
     // 3) Generate JWT
-    const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
+    const JWT_SECRET = process.env.JWT_SECRET || 'dev_change_me_please';
     const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
 
     // Shape public user
@@ -47,7 +55,10 @@ export async function POST(request) {
       phone: user.phone,
       country: user.country,
       isVerified: user.is_verified,
-      avatarUrl: user.avatar_url
+      isSuspended: user.is_suspended,
+      avatarUrl: user.avatar_url,
+      balance: Number(user.balance || 0),
+      demoBalance: Number(user.demo_balance || 0)
     };
 
     return NextResponse.json({

@@ -1,0 +1,16 @@
+import { requireAdmin, json } from '@/app/api/admin/_utils';
+import { getTradesData } from '@/lib/adminMetrics';
+
+export async function GET(request) {
+  const auth = requireAdmin(request.headers);
+  if (!auth.ok) return auth.response;
+
+  const { searchParams } = new URL(request.url);
+  const page = Number(searchParams.get('page') || '1');
+  const pageSize = Number(searchParams.get('pageSize') || '20');
+  const status = searchParams.get('status') || 'all';
+  const search = searchParams.get('q') || '';
+
+  const data = await getTradesData({ page, pageSize, status, search });
+  return json(data);
+}

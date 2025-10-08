@@ -1,6 +1,8 @@
 "use client";
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
+import React, { useState, useEffect, useCallback } from 'react';
+// import Link from 'next/link';
+import MainAppLayout from '../components/MainAppLayout';
+import { authUtils } from '../../lib/auth';
 
 export default function AnalyticsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('7d');
@@ -16,83 +18,122 @@ export default function AnalyticsPage() {
   ];
 
   const viewTypes = [
-    { value: 'overview', label: 'Overview', icon: 'fa-chart-pie' },
+    { value: 'overview', label: 'Overview', icon: 'fa-eye' },
     { value: 'portfolio', label: 'Portfolio', icon: 'fa-briefcase' },
-    { value: 'performance', label: 'Performance', icon: 'fa-chart-line' },
+    { value: 'performance', label: 'Performance', icon: 'fa-trophy' },
     { value: 'risk', label: 'Risk Analysis', icon: 'fa-shield-alt' }
   ];
 
+  // State for real data
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [data, setData] = useState(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const token = authUtils.isAuthenticated() ? localStorage.getItem('auth_token') : null;
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+
+      const res = await fetch('/api/analytics/summary', {
+        cache: 'no-store',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+      const json = await res.json();
+      setData(json);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const analytics = data?.analytics;
+  const derived = data?.derived;
+
+  // Map to previous variable names / structures
   const stats = {
-    totalTrades: 245,
-    successRate: 68.5,
-    totalProfit: 1250.75,
-    totalLoss: -485.20,
-    netProfit: 765.55,
-    avgTradeTime: '2m 15s',
-    bestDay: '+$125.50',
-    worstDay: '-$85.30',
-    portfolioValue: 8750.25,
-    dailyChange: '+2.3%',
-    weeklyChange: '+8.7%',
-    monthlyChange: '+15.2%',
-    sharpeRatio: 1.45,
-    maxDrawdown: '-12.8%',
-    volatility: '18.5%',
-    riskScore: 6.2
+    totalTrades: analytics?.trading?.totalTrades || 0,
+    successRate: derived?.successRate ?? 0,
+    totalProfit: derived?.totalProfitApprox ?? 0,
+    totalLoss: 0, // placeholder until we store realized losses separately
+    netProfit: derived?.totalProfitApprox ?? 0,
+    avgTradeTime: '—',
+    bestDay: '—',
+    worstDay: '—',
+    portfolioValue: analytics?.financial?.netDeposits || 0,
+    dailyChange: '—',
+    weeklyChange: '—',
+    monthlyChange: '—',
+    sharpeRatio: '—',
+    maxDrawdown: '—',
+    volatility: '—',
+    riskScore: 0,
+    winStreak: analytics?.trading?.winStreak || 0,
+    lossStreak: analytics?.trading?.lossStreak || 0,
+    averageDailyProfit: analytics?.trading?.averageDailyProfit || 0
   };
 
-  const assetPerformance = [
-    { asset: 'BTCUSDT', trades: 85, winRate: 72.5, profit: '+$425.30' },
-    { asset: 'ETHUSD', trades: 62, winRate: 66.1, profit: '+$285.75' },
-    { asset: 'XRPUSDT', trades: 48, winRate: 64.6, profit: '+$125.20' },
-    { asset: 'ADAUSDT', trades: 35, winRate: 71.4, profit: '+$95.50' },
-    { asset: 'DOGEUSDT', trades: 15, winRate: 53.3, profit: '-$166.00' }
-  ];
+  const assetPerformance = analytics?.popularPairs?.map(p => ({
+    asset: p.symbol,
+    trades: p.trades,
+    winRate: 0, // Will be calculated properly once we have win/loss data per symbol
+    profit: `$${p.volume.toFixed(2)}`
+  })) || [];
 
-  const recentTrades = [
-    { id: 1, asset: 'BTCUSDT', direction: 'UP', amount: 50, result: 'WIN', profit: '+$42.50', time: '2 min ago' },
-    { id: 2, asset: 'ETHUSD', direction: 'DOWN', amount: 25, result: 'WIN', profit: '+$21.25', time: '5 min ago' },
-    { id: 3, asset: 'BTCUSDT', direction: 'UP', amount: 100, result: 'LOSS', profit: '-$100.00', time: '8 min ago' },
-    { id: 4, asset: 'XRPUSDT', direction: 'DOWN', amount: 30, result: 'WIN', profit: '+$25.50', time: '12 min ago' },
-    { id: 5, asset: 'ETHUSD', direction: 'UP', amount: 75, result: 'WIN', profit: '+$63.75', time: '15 min ago' }
-  ];
+  const recentTrades = analytics?.recentTrades?.map(t => ({
+    id: t.id,
+    asset: t.symbol,
+    direction: t.direction,
+    amount: t.amount,
+    result: t.result || 'open',
+    profit: t.result === 'WIN' ? `+$${(t.amount).toFixed(2)}` : t.result === 'LOSS' ? `-$${(t.amount).toFixed(2)}` : '—',
+    time: new Date(t.openTime).toLocaleTimeString()
+  })) || [];
 
-  const portfolioBreakdown = [
-    { asset: 'BTCUSDT', allocation: 35, value: 3062.59, change: '+5.2%', color: 'bg-orange-500' },
-    { asset: 'ETHUSD', allocation: 25, value: 2187.56, change: '+3.1%', color: 'bg-blue-500' },
-    { asset: 'XRPUSDT', allocation: 20, value: 1750.05, change: '-1.2%', color: 'bg-gray-500' },
-    { asset: 'ADAUSDT', allocation: 15, value: 1312.54, change: '+2.8%', color: 'bg-green-500' },
-    { asset: 'DOGEUSDT', allocation: 5, value: 437.51, change: '-0.5%', color: 'bg-yellow-500' }
-  ];
+  const portfolioBreakdown = assetPerformance.slice(0,5).map((a,i) => ({
+    asset: a.asset,
+    allocation: 0,
+    value: a.trades, // placeholder mapping
+    change: '—',
+    color: ['bg-orange-500','bg-blue-500','bg-gray-500','bg-green-500','bg-yellow-500'][i%5]
+  }));
 
   const performanceMetrics = [
-    { label: 'Return on Investment', value: '15.2%', change: '+2.1%', icon: 'fa-percentage' },
-    { label: 'Sharpe Ratio', value: '1.45', change: '+0.12', icon: 'fa-chart-bar' },
-    { label: 'Calmar Ratio', value: '1.18', change: '+0.08', icon: 'fa-balance-scale' },
-    { label: 'Beta', value: '0.92', change: '-0.05', icon: 'fa-wave-square' },
-    { label: 'Alpha', value: '3.2%', change: '+0.8%', icon: 'fa-star' },
-    { label: 'Information Ratio', value: '0.68', change: '+0.15', icon: 'fa-info-circle' }
+    { label: 'Total Trades', value: stats.totalTrades, change: '', icon: 'fa-exchange-alt' },
+    { label: 'Net Deposits', value: `$${(analytics?.financial?.netDeposits||0).toFixed(2)}` , change: '', icon: 'fa-wallet' },
+    { label: 'Avg Trade Size', value: `$${(analytics?.trading?.averageTradeSize||0).toFixed(2)}`, change: '', icon: 'fa-balance-scale' },
+    { label: 'Win Rate', value: `${stats.successRate}%`, change: '', icon: 'fa-trophy' }
   ];
 
   const riskMetrics = [
-    { label: 'Value at Risk (95%)', value: '$875.25', status: 'medium' },
-    { label: 'Maximum Drawdown', value: '-12.8%', status: 'low' },
-    { label: 'Volatility', value: '18.5%', status: 'medium' },
-    { label: 'Risk Score', value: '6.2/10', status: 'medium' }
+    { label: 'Total Trades', value: `${stats.totalTrades}`, status: 'medium' },
+    { label: 'Win Rate', value: `${stats.successRate}%`, status: stats.successRate >= 60 ? 'low' : stats.successRate >= 40 ? 'medium' : 'high' },
+    { label: 'Net Deposits', value: `$${(analytics?.financial?.netDeposits||0).toFixed(2)}`, status: 'low' }
   ];
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <MainAppLayout>
+      <div className="bg-gray-900 text-white">
       {/* Header */}
-      <div className="bg-gray-800 border-b border-gray-700 p-6">
+      <div className="bg-gray-800 border-b border-gray-700 p-4 md:p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Link href="/" className="text-blue-400 hover:text-blue-300">
-              <i className="fas fa-arrow-left"></i> Back to Home
-            </Link>
-            <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
+            <h1 className="text-2xl md:text-3xl font-bold">Analytics Dashboard</h1>
           </div>
           <div className="flex items-center space-x-4">
+            <button onClick={fetchData} className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg flex items-center gap-2">
+              <i className="fas fa-rotate-right"></i>
+              Refresh
+            </button>
             <select
               value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
@@ -130,12 +171,25 @@ export default function AnalyticsPage() {
       </div>
 
       <div className="p-6">
+        {/* Loading / Error states */}
+        {loading && (
+          <div className="p-10 text-center text-gray-400">Loading analytics…</div>
+        )}
+        {error && !loading && (
+          <div className="p-6 mb-6 bg-red-900/40 border border-red-700 rounded text-red-300">
+            <p className="font-semibold mb-2">Failed to load analytics</p>
+            <p className="text-sm mb-4">{error}</p>
+            <button onClick={fetchData} className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded text-sm">Retry</button>
+          </div>
+        )}
+
         {/* Portfolio Value Header */}
+        {!loading && !error && (
         <div className="bg-gradient-to-r from-blue-900 to-purple-900 p-6 rounded-lg mb-8">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold mb-2">Portfolio Value</h2>
-              <p className="text-4xl font-bold">${stats.portfolioValue.toLocaleString()}</p>
+              <p className="text-4xl font-bold">${Number(stats.portfolioValue).toLocaleString()}</p>
               <div className="flex items-center space-x-4 mt-2">
                 <span className="text-green-400 flex items-center">
                   <i className="fas fa-arrow-up mr-1"></i>
@@ -154,10 +208,11 @@ export default function AnalyticsPage() {
               </div>
             </div>
           </div>
-        </div>
+  </div>
+  )}
 
         {/* Dynamic Content Based on View Type */}
-        {viewType === 'overview' && (
+        {!loading && !error && viewType === 'overview' && (
           <>
             {/* Key Metrics */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
@@ -168,7 +223,7 @@ export default function AnalyticsPage() {
                     <p className="text-2xl font-bold">{stats.totalTrades}</p>
                   </div>
                   <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
-                    <i className="fas fa-chart-line text-xl"></i>
+                    <i className="fas fa-exchange-alt text-xl"></i>
                   </div>
                 </div>
               </div>
@@ -212,7 +267,7 @@ export default function AnalyticsPage() {
           </>
         )}
 
-        {viewType === 'portfolio' && (
+        {!loading && !error && viewType === 'portfolio' && (
           <>
             {/* Portfolio Allocation */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
@@ -240,10 +295,10 @@ export default function AnalyticsPage() {
               </div>
 
               <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
-                <h2 className="text-xl font-semibold mb-4">Portfolio Chart</h2>
+                <h2 className="text-xl font-semibold mb-4">Portfolio Overview</h2>
                 <div className="bg-gray-900 rounded-lg h-64 flex items-center justify-center border border-gray-700">
                   <div className="text-center">
-                    <i className="fas fa-chart-pie text-5xl text-gray-600 mb-4"></i>
+                    <i className="fas fa-pie-chart text-5xl text-gray-600 mb-4"></i>
                     <p className="text-gray-400">Portfolio Distribution</p>
                     <p className="text-sm text-gray-500">Interactive pie chart here</p>
                   </div>
@@ -253,7 +308,7 @@ export default function AnalyticsPage() {
           </>
         )}
 
-        {viewType === 'performance' && (
+        {!loading && !error && viewType === 'performance' && (
           <>
             {/* Performance Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
@@ -277,7 +332,7 @@ export default function AnalyticsPage() {
           </>
         )}
 
-        {viewType === 'risk' && (
+        {!loading && !error && viewType === 'risk' && (
           <>
             {/* Risk Analysis */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
@@ -318,7 +373,8 @@ export default function AnalyticsPage() {
         )}
 
         {/* Common Sections - Always Visible */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        {!loading && !error && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Profit/Loss Chart */}
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
             <h2 className="text-xl font-semibold mb-4">
@@ -327,9 +383,9 @@ export default function AnalyticsPage() {
             <div className="bg-gray-900 rounded-lg h-64 flex items-center justify-center border border-gray-700">
               <div className="text-center">
                 <i className={`fas ${
-                  viewType === 'portfolio' ? 'fa-chart-line' : 
-                  viewType === 'performance' ? 'fa-chart-bar' :
-                  viewType === 'risk' ? 'fa-shield-alt' : 'fa-chart-area'
+                  viewType === 'portfolio' ? 'fa-line-chart' : 
+                  viewType === 'performance' ? 'fa-bar-chart' :
+                  viewType === 'risk' ? 'fa-shield-alt' : 'fa-area-chart'
                 } text-5xl text-gray-600 mb-4`}></i>
                 <p className="text-gray-400">
                   {viewType === 'portfolio' ? 'Portfolio Value Over Time' :
@@ -375,15 +431,15 @@ export default function AnalyticsPage() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-400">Average Daily Profit</span>
-                    <span className="text-green-400 font-semibold">$45.32</span>
+                    <span className="text-green-400 font-semibold">${stats.averageDailyProfit.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-400">Win Streak</span>
-                    <span className="text-blue-400 font-semibold">8 trades</span>
+                    <span className="text-blue-400 font-semibold">{stats.winStreak} trades</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-400">Loss Streak</span>
-                    <span className="text-red-400 font-semibold">3 trades</span>
+                    <span className="text-red-400 font-semibold">{stats.lossStreak} trades</span>
                   </div>
                 </div>
                 <div className="mt-6">
@@ -477,10 +533,12 @@ export default function AnalyticsPage() {
               </>
             )}
           </div>
-        </div>
+  </div>
+  )}
 
-        {/* Asset Performance & Recent Activity - Always Visible */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+  {/* Asset Performance & Recent Activity */}
+        {!loading && !error && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Asset Performance */}
           <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
             <h2 className="text-xl font-semibold mb-4">
@@ -537,8 +595,12 @@ export default function AnalyticsPage() {
               ))}
             </div>
           </div>
-        </div>
+          </div>
+        )}
+
+        {/* Ensure prior conditional is closed before next section */}
       </div>
     </div>
+    </MainAppLayout>
   );
 }

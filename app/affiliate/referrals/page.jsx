@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faUsers, faUserPlus, faEye, faSearch, faFilter, faDownload,
-  faCalendar, faGlobe, faEnvelope, faPhone, faChartLine
+  faCalendar, faGlobe, faEnvelope, faPhone
 } from '@fortawesome/free-solid-svg-icons';
 import Link from 'next/link';
 import '../dashboard/styles.css';
@@ -199,7 +199,7 @@ export default function AffiliateReferrals() {
             cardType="monthly"
           />
           <StatCard
-            icon={faChartLine}
+            icon={faEye}
             title="Conversion Rate"
             value={`${referralsData?.stats?.conversionRate || 0}%`}
             subtitle="Success rate"

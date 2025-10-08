@@ -7,7 +7,7 @@
 #### 1. **Trading Section:**
 - ✅ `/` - Main Trading Dashboard
 - ✅ `/trade` - Trading Page (Dedicated Route)
-- ✅ `/charts` - Trading Charts
+- ✅ `/trade` - Trading Page (Dedicated Route)
 
 #### 2. **Analytics & Reports:**
 - ✅ `/analytics` - Complete Analytics Dashboard

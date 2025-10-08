@@ -1,53 +1,72 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 
 export default function P2PPage() {
   const [activeTab, setActiveTab] = useState('buy');
   const [selectedCrypto, setSelectedCrypto] = useState('USDT');
-  const [selectedFiat, setSelectedFiat] = useState('USD');
+  const [selectedFiat, setSelectedFiat] = useState('BDT');
+  const [amountFiat, setAmountFiat] = useState(0);
+  const [offers, setOffers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const cryptos = ['USDT', 'BTC', 'ETH', 'BNB'];
-  const fiats = ['USD', 'EUR', 'GBP', 'JPY'];
+  const fiats = ['BDT', 'USD', 'EUR', 'GBP', 'JPY'];
+  const apiSide = useMemo(() => (activeTab === 'buy' ? 'SELL' : 'BUY'), [activeTab]);
 
-  const p2pOffers = [
-    {
-      id: 1,
-      trader: 'CryptoMaster',
-      rating: 4.9,
-      trades: 1250,
-      price: 1.002,
-      min: 50,
-      max: 5000,
-      available: 45000,
-      payment: ['Bank Transfer', 'PayPal'],
-      online: true
-    },
-    {
-      id: 2,
-      trader: 'BitcoinGuru',
-      rating: 4.8,
-      trades: 890,
-      price: 1.001,
-      min: 100,
-      max: 2000,
-      available: 25000,
-      payment: ['Wise', 'Revolut'],
-      online: true
-    },
-    {
-      id: 3,
-      trader: 'TradingPro',
-      rating: 4.7,
-      trades: 650,
-      price: 1.003,
-      min: 25,
-      max: 1500,
-      available: 18000,
-      payment: ['Bank Transfer'],
-      online: false
+  useEffect(() => {
+    let abort = false;
+    async function load() {
+      setLoading(true);
+      setError('');
+      try {
+        const params = new URLSearchParams({ asset: selectedCrypto, fiat: selectedFiat, side: apiSide, page: '1', pageSize: '20' });
+        const res = await fetch(`/api/p2p/offers?${params.toString()}`);
+        if (!res.ok) throw new Error(`Failed to load offers (${res.status})`);
+        const data = await res.json();
+        if (!abort) setOffers(data.items || []);
+      } catch (e) {
+        if (!abort) setError(e.message || 'Failed to load');
+      } finally {
+        if (!abort) setLoading(false);
+      }
     }
-  ];
+    load();
+    return () => { abort = true; };
+  }, [selectedCrypto, selectedFiat, apiSide]);
+
+  function getAuthHeader() {
+    // Try app token first
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('auth_token');
+      if (token) return { Authorization: `Bearer ${token}` };
+    }
+    // Dev fallback to demo user
+    return { Authorization: 'Bearer DEVUSER:demo@example.com' };
+  }
+
+  async function createOrder(offer, usingFiatAmount) {
+    try {
+      if (!usingFiatAmount || usingFiatAmount <= 0) {
+        alert('Please enter a valid fiat amount');
+        return;
+      }
+      const res = await fetch('/api/p2p/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeader(),
+        },
+        body: JSON.stringify({ offer_id: offer.id, amount_fiat: Number(usingFiatAmount) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to create order');
+      alert(`Order created: ${data.order?.reference_code || data.order?.id}`);
+    } catch (e) {
+      alert(e.message);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -63,12 +82,12 @@ export default function P2PPage() {
             </h1>
           </div>
           <div className="flex items-center space-x-4">
-            <button className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">
+            <Link href="/p2p/post" className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">
               <i className="fas fa-plus mr-2"></i>Post Ad
-            </button>
-            <button className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg">
+            </Link>
+            <Link href="/p2p/orders" className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg">
               <i className="fas fa-history mr-2"></i>My Orders
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -152,7 +171,9 @@ export default function P2PPage() {
                 <label className="block text-sm font-medium mb-2">Amount</label>
                 <input
                   type="number"
-                  placeholder="Enter amount"
+                  value={amountFiat}
+                  onChange={(e) => setAmountFiat(parseFloat(e.target.value) || 0)}
+                  placeholder="Enter amount (fiat)"
                   className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
@@ -170,49 +191,41 @@ export default function P2PPage() {
 
           {/* Offers List */}
           <div className="divide-y divide-gray-700">
-            {p2pOffers.map((offer) => (
+            {loading && (
+              <div className="p-6 text-gray-300">Loading offers...</div>
+            )}
+            {error && !loading && (
+              <div className="p-6 text-red-400">{error}</div>
+            )}
+            {!loading && !error && offers.length === 0 && (
+              <div className="p-6 text-gray-400">No offers found for {selectedCrypto}/{selectedFiat} ({apiSide}).</div>
+            )}
+            {offers.map((offer) => (
               <div key={offer.id} className="p-6 hover:bg-gray-700/30 transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     <div className="relative">
                       <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center font-bold">
-                        {offer.trader[0]}
+                        {offer.asset_symbol?.[0] || 'T'}
                       </div>
-                      {offer.online && (
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-800"></div>
-                      )}
                     </div>
                     <div>
-                      <h3 className="font-semibold">{offer.trader}</h3>
-                      <div className="flex items-center space-x-2 text-sm text-gray-400">
-                        <span className="flex items-center">
-                          <i className="fas fa-star text-yellow-400 mr-1"></i>
-                          {offer.rating}
-                        </span>
-                        <span>•</span>
-                        <span>{offer.trades} trades</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {offer.payment.map((method, index) => (
-                          <span key={index} className="px-2 py-1 bg-gray-600 rounded text-xs">
-                            {method}
-                          </span>
-                        ))}
-                      </div>
+                      <h3 className="font-semibold">{offer.side} {offer.asset_symbol}</h3>
+                      <div className="text-sm text-gray-400">Offer ID: {offer.id.slice(0,8)}...</div>
                     </div>
                   </div>
 
                   <div className="text-center">
-                    <div className="text-xl font-bold">{offer.price} {selectedFiat}</div>
+                    <div className="text-xl font-bold">{Number(offer.fixed_price || offer.price).toLocaleString()} {selectedFiat}</div>
                     <div className="text-sm text-gray-400">per {selectedCrypto}</div>
                   </div>
 
                   <div className="text-center">
                     <div className="text-lg font-semibold">
-                      {offer.min} - {offer.max.toLocaleString()} {selectedFiat}
+                      {(offer.min_limit_fiat || 0).toLocaleString()} - {(offer.max_limit_fiat || 0).toLocaleString()} {selectedFiat}
                     </div>
                     <div className="text-sm text-gray-400">
-                      Available: {offer.available.toLocaleString()} {selectedCrypto}
+                      Limits (asset): {(offer.min_amount_asset || 0)} - {(offer.max_amount_asset || 0)} {selectedCrypto}
                     </div>
                   </div>
 
@@ -222,6 +235,7 @@ export default function P2PPage() {
                         ? 'bg-green-600 hover:bg-green-700 text-white'
                         : 'bg-red-600 hover:bg-red-700 text-white'
                     }`}
+                    onClick={() => createOrder(offer, amountFiat)}
                   >
                     {activeTab === 'buy' ? 'Buy' : 'Sell'} {selectedCrypto}
                   </button>

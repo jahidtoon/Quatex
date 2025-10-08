@@ -23,10 +23,10 @@ const GlobalNavigation = ({ title, subtitle }) => {
       {/* Quick Navigation Menu */}
       <div className="flex flex-wrap gap-2 p-4 bg-gray-800 rounded-lg border border-gray-700">
         <Link href="/trade" className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors">
-          <i className="fas fa-chart-line mr-1"></i> Trade
+          <i className="fas fa-exchange-alt mr-1"></i> Trade
         </Link>
         <Link href="/analytics" className="px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded text-sm transition-colors">
-          <i className="fas fa-chart-bar mr-1"></i> Analytics
+          <i className="fas fa-chart-area mr-1"></i> Analytics
         </Link>
         <Link href="/account" className="px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded text-sm transition-colors">
           <i className="fas fa-user mr-1"></i> Account

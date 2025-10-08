@@ -1,6 +1,7 @@
 import './globals.css';
 import { Inter } from 'next/font/google';
 import '@fortawesome/fontawesome-free/css/all.min.css';
+import { AuthProvider } from '@/lib/AuthContext';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -12,7 +13,11 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={inter.className}>
-      <body>{children}</body>
+      <body className="bg-main text-main">
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
     </html>
   );
 }

@@ -15,7 +15,7 @@ export async function GET(request) {
     }
 
     const token = authHeader.split(' ')[1];
-    const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
+    const JWT_SECRET = process.env.JWT_SECRET || 'dev_change_me_please';
     
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
@@ -24,7 +24,7 @@ export async function GET(request) {
       // Get user basic info
       const user = await prisma.users.findUnique({
         where: { id: userId },
-        select: { balance: true }
+        select: { balance: true, demo_balance: true }
       });
 
       if (!user) {
@@ -109,7 +109,8 @@ export async function GET(request) {
       // Calculate statistics
       const totalDeposits = Number(depositsData._sum.amount || 0);
       const totalWithdrawals = Number(withdrawalsData._sum.amount || 0);
-      const currentBalance = Number(user.balance || 0);
+  const currentBalance = Number(user.balance || 0);
+  const demoBalance = Number(user.demo_balance || 0);
       const totalTrades = tradesData._count;
       const successRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
       const profitLoss = currentBalance - totalDeposits + totalWithdrawals;
@@ -164,6 +165,7 @@ export async function GET(request) {
           totalDeposits,
           totalWithdrawals,
           currentBalance,
+          demoBalance,
           totalTrades,
           successRate: Math.round(successRate * 10) / 10,
           profitLoss

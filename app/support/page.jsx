@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from 'react';
 import Link from 'next/link';
+import MainAppLayout from '../components/MainAppLayout';
 
 export default function SupportPage() {
   const [selectedCategory, setSelectedCategory] = useState('general');
@@ -61,7 +62,8 @@ export default function SupportPage() {
   ) || [];
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <MainAppLayout>
+      <div className="bg-gray-900 text-white">
       {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 p-6">
         <div className="flex items-center justify-between">
@@ -286,5 +288,6 @@ export default function SupportPage() {
         </div>
       </div>
     </div>
+    </MainAppLayout>
   );
 }

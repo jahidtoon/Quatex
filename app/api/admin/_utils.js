@@ -7,14 +7,21 @@ export function requireAdmin(reqHeaders) {
   const cookieToken = cookieHeader.split(/;\s*/).map(s=>s.trim()).find(s=>s.startsWith('admin_token='))?.split('=')[1];
   const token = (cookieToken && decodeURIComponent(cookieToken)) || headerToken?.replace(/^Bearer\s+/i, '');
   // Allow static ADMIN_TOKEN for scripts or fallback
-  if (token === process.env.ADMIN_TOKEN) return { ok: true };
+  if (token === process.env.ADMIN_TOKEN) return { ok: true, admin: null };
 
   // Try JWT admin token
   if (token) {
     try {
-      const secret = process.env.JWT_SECRET || 'dev_secret_change_me';
+      const secret = process.env.JWT_SECRET || 'dev_change_me_please';
       const payload = jwt.verify(token, secret);
-      if (payload && payload.role === 'admin') return { ok: true };
+      if (payload && payload.role === 'admin') {
+        const admin = {
+          id: payload.sub || payload.id || null,
+          email: payload.email || null,
+          role: payload.role,
+        };
+        return { ok: true, admin };
+      }
     } catch (e) {
       // fallthrough
     }

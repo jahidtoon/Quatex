@@ -62,7 +62,7 @@ app/api/affiliate/
 
 ### 4. **Reusable Components**
 - ✅ `ReferralLinkGenerator` - Link sharing component
-- ✅ `EarningsChart` - Earnings visualization
+- ✅ `CommissionTiers` - Tier progression display
 - ✅ `CommissionTiers` - Tier progression display
 - ✅ `ReferralStats` - Statistics overview
 - ✅ `MarketingMaterials` - Promotional tools

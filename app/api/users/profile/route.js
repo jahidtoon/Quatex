@@ -15,7 +15,7 @@ export async function GET(request) {
     }
 
     const token = authHeader.split(' ')[1];
-    const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
+    const JWT_SECRET = process.env.JWT_SECRET || 'dev_change_me_please';
     
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
@@ -36,6 +36,7 @@ export async function GET(request) {
           city: true,
           postal_code: true,
           balance: true,
+          demo_balance: true,
           is_verified: true,
           avatar_url: true,
           created_at: true,
@@ -50,9 +51,15 @@ export async function GET(request) {
         );
       }
 
+      const sanitized = {
+        ...user,
+        balance: Number(user.balance || 0),
+        demo_balance: Number(user.demo_balance || 0)
+      };
+
       return NextResponse.json({
         success: true,
-        user
+        user: sanitized
       });
 
     } catch (jwtError) {
@@ -84,7 +91,7 @@ export async function PUT(request) {
     }
 
     const token = authHeader.split(' ')[1];
-    const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
+    const JWT_SECRET = process.env.JWT_SECRET || 'dev_change_me_please';
     
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
@@ -128,6 +135,7 @@ export async function PUT(request) {
           city: true,
           postal_code: true,
           balance: true,
+          demo_balance: true,
           is_verified: true,
           avatar_url: true,
           updated_at: true
@@ -136,7 +144,11 @@ export async function PUT(request) {
 
       return NextResponse.json({
         success: true,
-        user: updatedUser,
+        user: {
+          ...updatedUser,
+          balance: Number(updatedUser.balance || 0),
+          demo_balance: Number(updatedUser.demo_balance || 0)
+        },
         message: 'Profile updated successfully'
       });
 

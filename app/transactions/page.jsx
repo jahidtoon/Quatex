@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from 'react';
 import Link from 'next/link';
+import MainAppLayout from '../components/MainAppLayout';
 
 export default function TransactionsPage() {
   const [filter, setFilter] = useState('all');
@@ -50,7 +51,8 @@ export default function TransactionsPage() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <MainAppLayout>
+      <div className="bg-gray-900 text-white">
       <div className="bg-gray-800 border-b border-gray-700 p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -157,5 +159,6 @@ export default function TransactionsPage() {
         </div>
       </div>
     </div>
+    </MainAppLayout>
   );
 }

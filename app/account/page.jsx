@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth, useApi } from '@/lib/hooks';
+import MainAppLayout from '../components/MainAppLayout';
 
 export default function AccountPage() {
   const { user, token, isAuthenticated, updateUser } = useAuth();
@@ -182,13 +183,14 @@ export default function AccountPage() {
     { id: 'profile', label: 'Profile', icon: 'fa-user' },
     { id: 'security', label: 'Security', icon: 'fa-shield-alt' },
     { id: 'activity', label: 'Activity', icon: 'fa-history' },
+    { id: 'billing', label: 'Billing', icon: 'fa-credit-card' },
     { id: 'verification', label: 'Verification', icon: 'fa-check-circle' },
     { id: 'preferences', label: 'Preferences', icon: 'fa-cog' }
   ];
 
   const getActivityIcon = (type) => {
     switch(type) {
-      case 'trade': return 'fa-chart-line';
+      case 'trade': return 'fa-exchange-alt';
       case 'deposit': return 'fa-arrow-down';
       case 'withdrawal': return 'fa-arrow-up';
       default: return 'fa-circle';
@@ -205,15 +207,13 @@ export default function AccountPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <MainAppLayout>
+      <div className="bg-gray-900 text-white">
       {/* Header */}
-      <div className="bg-gray-800 border-b border-gray-700 p-6">
+      <div className="bg-gray-800 border-b border-gray-700 p-4 md:p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Link href="/" className="text-blue-400 hover:text-blue-300">
-              <i className="fas fa-arrow-left"></i> Back to Home
-            </Link>
-            <h1 className="text-3xl font-bold flex items-center">
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center">
               <i className="fas fa-user-circle text-green-400 mr-3"></i>
               My Account
             </h1>
@@ -269,6 +269,10 @@ export default function AccountPage() {
 
         {/* Main Content */}
         <div className="flex-1 p-6">
+          {/* Billing Tab */}
+          {activeTab === 'billing' && (
+            <BillingTab />
+          )}
           {/* Profile Tab */}
           {activeTab === 'profile' && (
             <div className="bg-gray-800 rounded-lg border border-gray-700">
@@ -328,6 +332,7 @@ export default function AccountPage() {
                         onChange={(e) => setProfileData({...profileData, country: e.target.value})}
                         className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
+                        <option value="Bangladesh">Bangladesh</option>
                         <option value="United States">United States</option>
                         <option value="United Kingdom">United Kingdom</option>
                         <option value="Canada">Canada</option>
@@ -567,5 +572,161 @@ export default function AccountPage() {
         </div>
       </div>
     </div>
+    </MainAppLayout>
   );
 }
+
+function BillingTab() {
+  const { token, isAuthenticated } = useAuth();
+  const { apiCall } = useApi();
+  const [loading, setLoading] = useState(true);
+  const [methods, setMethods] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [fieldValues, setFieldValues] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [infoMessage, setInfoMessage] = useState('');
+
+  const loadAll = async () => {
+    try {
+      setLoading(true);
+      if (!token) return; // wait for auth token
+      const [pmRes, tplRes] = await Promise.all([
+        fetch('/api/p2p/payment-methods', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/payment-method-templates', { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      const pm = await pmRes.json();
+      const tp = await tplRes.json();
+      setMethods(pm.methods || []);
+      setTemplates(tp.templates || []);
+      setInfoMessage(tp.message || '');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { if (isAuthenticated && token) { loadAll(); } }, [isAuthenticated, token]);
+
+  const currentTemplate = templates.find(t => t.id === selectedTemplate);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!currentTemplate) return;
+    setSaving(true);
+    try {
+      const payload = {
+        type: currentTemplate.type,
+        label: currentTemplate.title,
+        details: fieldValues,
+      };
+      const res = await fetch('/api/p2p/payment-methods', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        alert(e.error || 'Failed to save');
+        return;
+      }
+      setSelectedTemplate('');
+      setFieldValues({});
+      await loadAll();
+    } catch (e) {
+      alert('Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Remove this billing method?')) return;
+    try {
+      const res = await fetch(`/api/p2p/payment-methods/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return alert('Failed');
+      await loadAll();
+    } catch (e) { alert('Failed'); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-gray-800 rounded-lg border border-gray-700">
+        <div className="p-6 border-b border-gray-700">
+          <h2 className="text-2xl font-semibold">Billing Methods</h2>
+          <p className="text-gray-400">Save payment information for P2P and Withdrawals.</p>
+        </div>
+        <div className="p-6 space-y-6">
+          {loading ? (
+            <div className="text-gray-400">Loading...</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h3 className="font-semibold mb-3">Saved Methods</h3>
+                <div className="space-y-3">
+                  {methods.map((m) => (
+                    <div key={m.id} className="p-4 bg-gray-700 rounded-lg flex items-start justify-between gap-4">
+                      <div>
+                        <div className="font-semibold">{m.label || m.type}</div>
+                        <div className="text-xs text-gray-300 whitespace-pre-wrap break-words">{JSON.stringify(m.details || {}, null, 2)}</div>
+                      </div>
+                      <button onClick={() => handleDelete(m.id)} className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded">Remove</button>
+                    </div>
+                  ))}
+                  {!methods.length && <div className="text-gray-400">No methods yet.</div>}
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-3">Add New</h3>
+                {infoMessage && (
+                  <div className="mb-3 text-sm text-yellow-300 bg-yellow-800/30 border border-yellow-700 rounded p-3">
+                    {infoMessage} Go to the <button type="button" className="underline" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>Profile</button> tab and set your Country.
+                  </div>
+                )}
+                <form onSubmit={handleSave} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Template</label>
+                    <select value={selectedTemplate} onChange={e=>{ setSelectedTemplate(e.target.value); setFieldValues({}); }} className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg">
+                      <option value="">Select a template</option>
+                      {templates.map(t => (
+                        <option key={t.id} value={t.id}>{t.title} [{t.type}] • {t.country} / {t.currency}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {currentTemplate && (
+                    <div className="space-y-3">
+                      {(currentTemplate.fields || []).map((f) => (
+                        <div key={f.key}>
+                          <label className="block text-sm font-medium mb-2">{f.label || f.key}{f.required ? ' *' : ''}</label>
+                          <input
+                            type="text"
+                            required={!!f.required}
+                            value={fieldValues[f.key] || ''}
+                            onChange={(e)=>setFieldValues(prev=>({ ...prev, [f.key]: e.target.value }))}
+                            className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg"
+                            placeholder={f.placeholder || ''}
+                          />
+                        </div>
+                      ))}
+                      <button disabled={saving} type="submit" className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white font-semibold py-3 px-6 rounded-lg">
+                        {saving ? 'Saving...' : 'Save Billing Method'}
+                      </button>
+                    </div>
+                  )}
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+

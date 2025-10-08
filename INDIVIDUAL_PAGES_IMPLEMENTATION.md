@@ -39,7 +39,7 @@ All individual pages have been successfully implemented with comprehensive funct
 - ✅ **Complete Settings Management**
   - **General:** Theme, language, currency, timezone
   - **Notifications:** Email, push, SMS, trading alerts
-  - **Trading:** Auto-close, sound effects, chart preferences
+  - **Trading:** Auto-close, sound effects, trading preferences
   - **Security:** 2FA, login alerts, session timeout
   - Real-time settings sync
   - Export/Import settings
@@ -80,7 +80,7 @@ All individual pages have been successfully implemented with comprehensive funct
 #### 💼 **View 2: Portfolio**
 - Asset allocation breakdown with percentages
 - Individual asset performance and values
-- Portfolio distribution pie chart
+- Portfolio distribution overview
 - Portfolio growth over time
 - Holdings summary with daily changes
 
@@ -92,7 +92,7 @@ All individual pages have been successfully implemented with comprehensive funct
   - Beta (market correlation)
   - Alpha (excess returns)
   - Information Ratio
-- Performance analytics charts
+- Performance analytics overview
 - Key ratio comparisons
 
 #### 🛡️ **View 4: Risk Analysis**

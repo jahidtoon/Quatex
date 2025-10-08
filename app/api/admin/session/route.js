@@ -9,7 +9,7 @@ export async function GET(request) {
   const token = cookieHeader.split(/;\s*/).find(s=>s.startsWith('admin_token='))?.split('=')[1];
   if (!token) return json({ authenticated: true });
   try {
-    const secret = process.env.JWT_SECRET || 'dev_secret_change_me';
+    const secret = process.env.JWT_SECRET || 'dev_change_me_please';
     const payload = jwt.verify(decodeURIComponent(token), secret);
     return json({ authenticated: true, payload });
   } catch {

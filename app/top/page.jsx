@@ -10,7 +10,7 @@ export default function TopPage() {
 
   const categories = [
     { id: 'traders', label: 'Top Traders', icon: 'fa-user-star' },
-    { id: 'assets', label: 'Top Assets', icon: 'fa-chart-line' },
+    { id: 'assets', label: 'Top Assets', icon: 'fa-coins' },
     { id: 'achievements', label: 'Achievements', icon: 'fa-trophy' },
     { id: 'community', label: 'Community', icon: 'fa-users' }
   ];
@@ -56,7 +56,7 @@ export default function TopPage() {
     },
     { 
       rank: 7, name: 'WaveRider', avatar: '🌊', profit: '+$8,970', winRate: 77.8, trades: 620, country: 'France',
-      followers: 3900, following: 41, level: 'Advanced', achievements: ['Swing Trader', 'Chart Master'],
+      followers: 3900, following: 41, level: 'Advanced', achievements: ['Swing Trader', 'Technical Analyst'],
       joinDate: '2023-03-22', totalProfit: 108000, streak: 11, status: 'online', verified: false
     },
     { 
@@ -386,7 +386,7 @@ export default function TopPage() {
                           </div>
                           <div className="flex items-center space-x-4 text-sm text-gray-400">
                             <span><i className="fas fa-flag mr-1"></i>{trader.country}</span>
-                            <span><i className="fas fa-chart-line mr-1"></i>{trader.trades} trades</span>
+                            <span><i className="fas fa-exchange-alt mr-1"></i>{trader.trades} trades</span>
                             <span><i className="fas fa-fire mr-1"></i>{trader.streak} streak</span>
                             <span><i className="fas fa-users mr-1"></i>{trader.followers.toLocaleString()} followers</span>
                           </div>

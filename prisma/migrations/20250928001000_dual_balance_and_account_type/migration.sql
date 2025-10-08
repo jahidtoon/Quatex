@@ -1,0 +1,2 @@
+-- NOTE: This migration previously duplicated columns added by prior migration.
+-- It has been intentionally neutralized to avoid duplicate column errors in SQLite.

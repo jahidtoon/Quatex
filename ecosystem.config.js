@@ -16,5 +16,21 @@ module.exports = {
     out_file: './logs/out.log',
     log_file: './logs/combined.log',
     time: true
+  }, {
+    name: 'quotex-deposit-watcher',
+    script: 'node',
+    args: 'scripts/watchDeposits.js',
+    cwd: '/home/jahidul11/nextjs/quotex',
+    env: {
+      NODE_ENV: 'production'
+    },
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '500M',
+    error_file: './logs/deposit-watcher-err.log',
+    out_file: './logs/deposit-watcher-out.log',
+    log_file: './logs/deposit-watcher.log',
+    time: true
   }]
 };

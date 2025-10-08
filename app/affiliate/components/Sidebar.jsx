@@ -7,7 +7,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faBars, faTimes, faTachometerAlt, faPercentage, faUsers, 
   faLink, faMoneyBillWave, faCog, faSignOutAlt, faHome,
-  faChartLine, faHandshake, faGift, faWallet, faBell,
+  faHandshake, faGift, faWallet, faBell,
   faUserShield, faFileAlt, faQuestionCircle
 } from '@fortawesome/free-solid-svg-icons';
 
