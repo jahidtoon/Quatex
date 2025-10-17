@@ -49,7 +49,7 @@ export default function IndicatorsPanel({ active, onAdd, onRemove, onClear, onCl
     flexDirection: 'column',
     boxShadow: 'none'
   } : {
-    position:'fixed', left:12, top:60, bottom:60, width:280, background:'#0f1220f2', border:'1px solid #243042', borderRadius:12, zIndex: 12, display:'flex', flexDirection:'column', boxShadow:'0 12px 30px #0008'
+    position:'fixed', left:12, top:60, bottom:60, width:280, background:'#0f1220f2', border:'1px solid #243042', borderRadius:12, zIndex: 80, display:'flex', flexDirection:'column', boxShadow:'0 12px 30px #0008'
   };
   return (
     <div style={containerStyle}>
@@ -57,7 +57,7 @@ export default function IndicatorsPanel({ active, onAdd, onRemove, onClear, onCl
         <div style={{ fontWeight:600 }}>Indicators</div>
         <button onClick={onClose} style={{ background:'transparent', color:'#9ca3af', border:'none', cursor:'pointer' }}>✕</button>
       </div>
-      <div style={{ padding:12, overflowY:'auto' }}>
+      <div style={{ padding:12, overflowY:'auto', flex: 1 }}>
         <div style={{ color:'#9ca3af', fontSize:12, marginBottom:8 }}>TREND INDICATORS</div>
         {items.map(item => {
           const isActive = active.includes(item.key);
@@ -200,11 +200,23 @@ export default function IndicatorsPanel({ active, onAdd, onRemove, onClear, onCl
             </div>
           );
         })}
-        {active.length > 0 && (
-          <div style={{ marginTop:12 }}>
-            <button onClick={onClear} style={{ width:'100%', background:'#7f1d1d', color:'#fff', border:'1px solid #b91c1c', padding:'6px 10px', borderRadius:8, cursor:'pointer' }}>Delete all</button>
-          </div>
-        )}
+      </div>
+      {/* Sticky footer with Clear All */}
+      <div style={{ padding:10, borderTop:'1px solid #243042' }}>
+        <button
+          onClick={onClear}
+          disabled={active.length === 0}
+          style={{
+            width:'100%',
+            background: active.length === 0 ? '#374151' : '#7f1d1d',
+            color:'#fff',
+            border:'1px solid ' + (active.length === 0 ? '#4b5563' : '#b91c1c'),
+            padding:'6px 10px',
+            borderRadius:8,
+            cursor: active.length === 0 ? 'not-allowed' : 'pointer',
+            opacity: active.length === 0 ? 0.6 : 1
+          }}
+        >Clear all</button>
       </div>
     </div>
   );

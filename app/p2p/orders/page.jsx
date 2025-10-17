@@ -1,6 +1,8 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import MainAppLayout from '../../components/MainAppLayout';
+import P2PHeader from '../components/P2PHeader';
 
 function getAuthHeader() {
   if (typeof window !== 'undefined') {
@@ -36,13 +38,10 @@ export default function MyOrdersPage() {
   }, [role]);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-6">
-      <div className="flex items-center justify-between mb-6">
-        <Link href="/p2p" className="text-blue-400 hover:text-blue-300">
-          <i className="fas fa-arrow-left"></i> Back to P2P
-        </Link>
-        <h1 className="text-2xl font-bold">My P2P Orders</h1>
-      </div>
+    <MainAppLayout currentPage="p2p">
+      <div className="min-h-screen bg-gray-900 text-white">
+        <P2PHeader title="My P2P Orders" currentPath="/p2p/orders" />
+        <div className="p-6">
 
       <div className="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-4 flex items-center gap-4">
         <label className="text-sm text-gray-300">View as:</label>
@@ -60,19 +59,56 @@ export default function MyOrdersPage() {
         <div className="bg-gray-800 rounded-lg border border-gray-700 divide-y divide-gray-700">
           {orders.length === 0 && <div className="p-6 text-gray-400">No orders found.</div>}
           {orders.map(o => (
-            <div key={o.id} className="p-6 flex items-center justify-between">
+            <div key={o.id} className={`p-6 flex items-center justify-between ${
+              o.status === 'PAID' ? 'bg-red-900/20 border-l-4 border-l-red-500' : 
+              o.status === 'ESCROW_HELD' ? 'bg-blue-900/20 border-l-4 border-l-blue-500' : ''
+            }`}>
               <div>
-                <div className="font-semibold">{o.side} {o.asset_symbol} • {o.fiat_currency}</div>
-                <div className="text-sm text-gray-400">{o.amount_asset} @ {o.price} → {o.amount_fiat} {o.fiat_currency}</div>
-                <div className="text-xs text-gray-500">Status: {o.status} • Ref: {o.reference_code}</div>
+                <div className="font-semibold flex items-center">
+                  {o.side} USD • {o.fiat_currency}
+                  {o.status === 'PAID' && (
+                    <span className="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded animate-pulse">
+                      <i className="fas fa-exclamation-triangle mr-1"></i>Release Required
+                    </span>
+                  )}
+                  {o.status === 'ESCROW_HELD' && (
+                    <span className="ml-2 px-2 py-1 text-xs bg-blue-600 text-white rounded">
+                      <i className="fas fa-clock mr-1"></i>Awaiting Payment
+                    </span>
+                  )}
+                </div>
+                <div className="text-sm text-gray-400">{o.amount_asset} USD @ {o.price} {o.fiat_currency} → {o.amount_fiat} {o.fiat_currency}</div>
+                <div className="text-xs text-gray-500 flex items-center">
+                  Status: <span className={`ml-1 px-2 py-1 rounded text-xs ${
+                    o.status === 'ESCROW_HELD' ? 'bg-blue-600' :
+                    o.status === 'PAID' ? 'bg-yellow-600' :
+                    o.status === 'RELEASED' ? 'bg-green-600' :
+                    o.status === 'CANCELED' ? 'bg-red-600' : 'bg-gray-600'
+                  }`}>{o.status}</span>
+                  <span className="ml-3">Ref: {o.reference_code}</span>
+                </div>
               </div>
               <div className="flex gap-3">
-                <Link href={`/p2p/order/${o.id}`} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded">Open</Link>
+                <Link href={`/p2p/order/${o.id}`} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded flex items-center">
+                  <i className="fas fa-eye mr-2"></i>View Details
+                </Link>
+                {o.status === 'PAID' && (
+                  <Link href={`/p2p/order/${o.id}`} className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded flex items-center animate-pulse">
+                    <i className="fas fa-exclamation-triangle mr-2"></i>Release Now
+                  </Link>
+                )}
+                {o.status === 'ESCROW_HELD' && (
+                  <Link href={`/p2p/order/${o.id}`} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center">
+                    <i className="fas fa-comments mr-2"></i>Chat
+                  </Link>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
-    </div>
+        </div>
+      </div>
+    </MainAppLayout>
   );
 }

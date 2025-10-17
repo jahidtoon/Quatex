@@ -20,18 +20,39 @@ export async function POST(req, { params }) {
     if (order.taker_id !== user.id && order.maker_id !== user.id) return NextResponse.json({ error: 'Not your order' }, { status: 403 });
     if (['RELEASED','CANCELED','REFUNDED'].includes(order.status)) return NextResponse.json({ error: 'Order already closed' }, { status: 400 });
 
-    // Refund escrow if held
+    // Refund escrow if held - restore USD to seller
     if (order.escrow_held && order.escrow_ledger_id) {
-      // Refund to seller (maker)
-      await prisma.wallet_ledger.create({
-        data: {
-          user_id: order.maker_id,
-          type: 'P2P_ESCROW_REFUND',
-          asset: order.asset_symbol,
-          amount: order.amount_asset,
-          meta: { order_id: order.id, refund: true }
-        }
+      // Get escrow details
+      const escrowEntry = await prisma.wallet_ledger.findUnique({
+        where: { id: order.escrow_ledger_id },
+        select: { meta: true }
       });
+
+      const escrowUSD = Number(escrowEntry?.meta?.escrow_amount_usd || 0);
+      
+      if (escrowUSD > 0) {
+        // Restore USD to seller's main balance
+        const sellerCurrentBalance = await prisma.users.findUnique({
+          where: { id: order.maker_id },
+          select: { balance: true }
+        });
+
+        await prisma.users.update({
+          where: { id: order.maker_id },
+          data: { balance: Number(sellerCurrentBalance?.balance || 0) + escrowUSD }
+        });
+
+        // Record the refund
+        await prisma.wallet_ledger.create({
+          data: {
+            user_id: order.maker_id,
+            type: 'P2P_ESCROW_REFUND',
+            asset: 'USD',
+            amount: escrowUSD,
+            meta: { order_id: order.id, refund: true, original_escrow_id: order.escrow_ledger_id }
+          }
+        });
+      }
     }
     // Mark order canceled
     const updated = await prisma.p2p_orders.update({

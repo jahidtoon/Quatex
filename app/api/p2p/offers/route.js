@@ -51,21 +51,18 @@ export async function POST(req) {
     const body = await req.json();
     const {
       side,
-      asset_symbol,
       fiat_currency,
       price_type,
       fixed_price,
       margin_percent,
-      min_amount_asset,
-      max_amount_asset,
-      min_limit_fiat,
-      max_limit_fiat,
+      min_amount,
+      max_amount,
       terms,
       auto_reply,
       payment_method_ids,
     } = body || {};
 
-    if (!side || !asset_symbol || !fiat_currency || !price_type) {
+    if (!side || !fiat_currency || !price_type) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -73,19 +70,44 @@ export async function POST(req) {
       return NextResponse.json({ error: 'fixed_price required for FIXED pricing' }, { status: 400 });
     }
 
+    // Professional validation for SELL offers - check main USD balance
+    if (side === 'SELL') {
+      // Get user's main USD balance
+      const userProfile = await prisma.users.findUnique({ 
+        where: { id: user.id }, 
+        select: { balance: true } 
+      });
+
+      const mainBalance = Number(userProfile?.balance || 0);
+      const requiredUSD = min_amount;
+      const maxRequiredUSD = max_amount;
+      
+      if (mainBalance < requiredUSD) {
+        return NextResponse.json({ 
+          error: `Insufficient balance. You have $${mainBalance.toLocaleString()}, but minimum offer requires $${requiredUSD.toLocaleString()}` 
+        }, { status: 400 });
+      }
+
+      if (mainBalance < maxRequiredUSD) {
+        return NextResponse.json({ 
+          error: `Insufficient balance. You have $${mainBalance.toLocaleString()}, but maximum offer requires $${maxRequiredUSD.toLocaleString()}` 
+        }, { status: 400 });
+      }
+    }
+
     const created = await prisma.p2p_offers.create({
       data: {
         user_id: user.id,
         side,
-        asset_symbol,
+        asset_symbol: 'USD', // We're trading USD
         fiat_currency,
         price_type,
         fixed_price: fixed_price ?? null,
         margin_percent: margin_percent ?? null,
-        min_amount_asset,
-        max_amount_asset,
-        min_limit_fiat,
-        max_limit_fiat,
+        min_amount_asset: min_amount,
+        max_amount_asset: max_amount,
+        min_limit_fiat: min_amount * Number(fixed_price || 1),
+        max_limit_fiat: max_amount * Number(fixed_price || 1),
         terms: terms ?? null,
         auto_reply: auto_reply ?? null,
       },

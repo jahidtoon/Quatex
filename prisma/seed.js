@@ -175,6 +175,115 @@ async function main() {
       }
     }
   }
+
+  // ---------------- Affiliate Demo Seed ----------------
+  // Create a demo affiliate account for testing affiliate module
+  const affEmail = 'affiliate@quatex.com';
+  let affiliate = await prisma.affiliates.findUnique({ where: { email: affEmail } });
+  if (!affiliate) {
+    const affHash = await bcrypt.hash('affiliate123', 10);
+    affiliate = await prisma.affiliates.create({
+      data: {
+        name: 'Demo Affiliate',
+        email: affEmail,
+        password_hash: affHash,
+        country: 'BD',
+        tier: 'Gold',
+        commission_rate: 45,
+        referral_code: 'AFF001',
+        status: 'Active'
+      }
+    });
+    console.log('Seeded demo affiliate:', affEmail, 'password: affiliate123');
+  }
+
+  // Create a few referred users if they don't exist
+  const referredEmails = ['ahmed@example.com','sarah@example.com','mike@example.com'];
+  const referredUsers = [];
+  for (const [i, email] of referredEmails.entries()) {
+    let u = await prisma.users.findUnique({ where: { email } });
+    if (!u) {
+      const hash = await bcrypt.hash('User@1234', 10);
+      u = await prisma.users.create({
+        data: {
+          email,
+          name: email.split('@')[0],
+          password_hash: hash,
+          is_verified: true,
+          country: i === 0 ? 'Bangladesh' : i === 1 ? 'Pakistan' : 'USA'
+        }
+      });
+    }
+    referredUsers.push(u);
+    // Link referral row
+    const existsRef = await prisma.affiliate_referrals.findFirst({ where: { affiliate_id: affiliate.id, user_id: u.id } });
+    if (!existsRef) {
+      await prisma.affiliate_referrals.create({
+        data: {
+          affiliate_id: affiliate.id,
+          user_id: u.id,
+          status: i === 2 ? 'Pending' : 'Active',
+          total_deposit: (i+1) * 500,
+          total_trades: (i+1) * 10,
+          earnings: (i+1) * 50
+        }
+      });
+    }
+  }
+
+  // Some commissions
+  const anyCommission = await prisma.affiliate_commissions.findFirst({ where: { affiliate_id: affiliate.id } });
+  if (!anyCommission) {
+    await prisma.affiliate_commissions.createMany({
+      data: [
+        {
+          affiliate_id: affiliate.id,
+          referral_user_id: referredUsers[0].id,
+          type: 'REFERRAL_DEPOSIT',
+          rate: 45,
+          amount: 125.5,
+          status: 'paid',
+          description: 'Commission from user deposit',
+          transaction_id: 'TXN001'
+        },
+        {
+          affiliate_id: affiliate.id,
+          referral_user_id: referredUsers[1].id,
+          type: 'TRADE_VOLUME',
+          rate: 45,
+          amount: 89.25,
+          status: 'pending',
+          description: 'Commission from trading activity',
+          transaction_id: 'TXN002'
+        },
+        {
+          affiliate_id: affiliate.id,
+          type: 'MONTHLY_BONUS',
+          rate: 0,
+          amount: 500,
+          status: 'paid',
+          description: 'Performance bonus',
+          transaction_id: 'TXN003'
+        }
+      ]
+    });
+  }
+
+  // A payout record
+  const anyPayout = await prisma.affiliate_payouts.findFirst({ where: { affiliate_id: affiliate.id } });
+  if (!anyPayout) {
+    await prisma.affiliate_payouts.create({
+      data: {
+        affiliate_id: affiliate.id,
+        amount: 150,
+        method: 'Bitcoin',
+        status: 'Paid',
+        requested_at: new Date(Date.now() - 7*24*3600*1000),
+        processed_at: new Date(Date.now() - 5*24*3600*1000),
+        note: 'Seed payout'
+      }
+    });
+  }
 }
 
 main()

@@ -58,15 +58,29 @@ export async function POST(request) {
       isSuspended: user.is_suspended,
       avatarUrl: user.avatar_url,
       balance: Number(user.balance || 0),
-      demoBalance: Number(user.demo_balance || 0)
+      demoBalance: Number(user.demo_balance || 0),
+      tournamentBalance: Number(user.tournament_balance || 0)
     };
 
-    return NextResponse.json({
+    // Build response and set httpOnly cookie for SSR/middleware compatibility
+    const res = NextResponse.json({
       success: true,
       token,
       user: userWithoutPassword,
       message: 'Login successful'
     });
+
+    // Use request protocol to decide cookie security; many staging envs use HTTP in production
+    const isHttps = (() => { try { return new URL(request.url).protocol === 'https:'; } catch { return false; } })();
+    res.cookies.set('auth_token', token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      secure: isHttps,
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+    });
+
+    return res;
 
   } catch (error) {
   console.error('Login error:', error);

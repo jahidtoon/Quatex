@@ -23,91 +23,21 @@ export default function AffiliateLinks() {
       router.push('/affiliate/auth');
       return;
     }
-    loadLinksData();
+    loadLinksData(token);
   }, [router]);
 
-  const loadLinksData = async () => {
+  const loadLinksData = async (token) => {
     try {
       setIsLoading(true);
-      // Mock data for affiliate links
-      const mockData = {
+      const res = await fetch('/api/affiliate/dashboard?type=stats', { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      setLinksData({
         success: true,
-        baseReferralCode: 'AFF001',
-        mainReferralLink: 'https://quatex.com/register?ref=AFF001',
-        stats: {
-          totalLinks: 8,
-          totalClicks: 1247,
-          totalConversions: 89,
-          conversionRate: 7.1
-        },
-        links: [
-          {
-            id: 'LINK001',
-            name: 'Main Referral Link',
-            url: 'https://quatex.com/register?ref=AFF001',
-            shortUrl: 'https://qx.co/af1',
-            campaign: 'main',
-            utm_source: 'affiliate',
-            utm_medium: 'referral',
-            utm_campaign: 'main',
-            clicks: 567,
-            conversions: 45,
-            conversionRate: 7.9,
-            createdDate: '2024-01-15',
-            lastClicked: '2024-09-08',
-            isActive: true
-          },
-          {
-            id: 'LINK002',
-            name: 'Social Media Campaign',
-            url: 'https://quatex.com/register?ref=AFF001&utm_source=social&utm_medium=post&utm_campaign=summer2024',
-            shortUrl: 'https://qx.co/sm24',
-            campaign: 'summer2024',
-            utm_source: 'social',
-            utm_medium: 'post',
-            utm_campaign: 'summer2024',
-            clicks: 234,
-            conversions: 18,
-            conversionRate: 7.7,
-            createdDate: '2024-06-15',
-            lastClicked: '2024-09-07',
-            isActive: true
-          },
-          {
-            id: 'LINK003',
-            name: 'Email Newsletter',
-            url: 'https://quatex.com/register?ref=AFF001&utm_source=newsletter&utm_medium=email&utm_campaign=weekly',
-            shortUrl: 'https://qx.co/nl1',
-            campaign: 'weekly',
-            utm_source: 'newsletter',
-            utm_medium: 'email',
-            utm_campaign: 'weekly',
-            clicks: 189,
-            conversions: 12,
-            conversionRate: 6.3,
-            createdDate: '2024-05-20',
-            lastClicked: '2024-09-06',
-            isActive: true
-          },
-          {
-            id: 'LINK004',
-            name: 'Blog Post Promotion',
-            url: 'https://quatex.com/register?ref=AFF001&utm_source=blog&utm_medium=article&utm_campaign=trading_tips',
-            shortUrl: 'https://qx.co/blog1',
-            campaign: 'trading_tips',
-            utm_source: 'blog',
-            utm_medium: 'article',
-            utm_campaign: 'trading_tips',
-            clicks: 156,
-            conversions: 9,
-            conversionRate: 5.8,
-            createdDate: '2024-07-10',
-            lastClicked: '2024-09-05',
-            isActive: true
-          }
-        ]
-      };
-      setLinksData(mockData);
+        baseReferralCode: data?.affiliate?.referralCode,
+        mainReferralLink: data?.referralLink,
+        stats: { totalLinks: 0, totalClicks: 0, totalConversions: 0, conversionRate: 0 },
+        links: []
+      });
     } catch (error) {
       console.error('Error loading links:', error);
     } finally {
@@ -120,22 +50,19 @@ export default function AffiliateLinks() {
     alert('Link copied to clipboard!');
   };
 
-  const createNewLink = () => {
+  const createNewLink = async () => {
     if (!newLink.name || !newLink.campaign) {
       alert('Please fill in all required fields');
       return;
     }
-    
-    const utmParams = new URLSearchParams({
-      ref: linksData.baseReferralCode,
-      utm_source: newLink.utm_source,
-      utm_medium: newLink.utm_medium,
-      utm_campaign: newLink.utm_campaign
+    const token = localStorage.getItem('affiliateToken');
+    const res = await fetch('/api/affiliate/dashboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'generate_link', campaign: newLink.campaign, source: newLink.utm_source, medium: newLink.utm_medium })
     });
-    
-    const fullUrl = `https://quatex.com/register?${utmParams.toString()}`;
-    
-    alert(`New link created: ${fullUrl}`);
+    const data = await res.json();
+    if (data?.link) alert(`New link created: ${data.link}`);
     setShowCreateForm(false);
     setNewLink({ name: '', campaign: '', utm_source: '', utm_medium: '', utm_campaign: '' });
   };

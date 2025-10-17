@@ -1,30 +1,43 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import jwt from 'jsonwebtoken';
+import { verifyToken } from '@/lib/auth';
 
 // Get user statistics and recent activity
 export async function GET(request) {
   try {
-    // Get token from Authorization header
+    // Get token from Authorization header or auth_token cookie
+    let token = null;
     const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    } else {
+      token = request.cookies?.get?.('auth_token')?.value || (request.headers.get('cookie')||'').split(';').map(c=>c.trim()).find(c=>c.startsWith('auth_token='))?.split('=')[1] || null;
+      if (!token) {
+        return NextResponse.json(
+          { error: 'Authentication required' },
+          { status: 401 }
+        );
+      }
     }
-
-    const token = authHeader.split(' ')[1];
-    const JWT_SECRET = process.env.JWT_SECRET || 'dev_change_me_please';
     
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      const userId = decoded.sub;
+      const authUser = await verifyToken(token);
+      if (!authUser) {
+        return NextResponse.json(
+          { error: 'Invalid token' },
+          { status: 401 }
+        );
+      }
+      const userId = authUser.id;
 
-      // Get user basic info
+      // Get user basic info (tolerate older Prisma clients without tournament_balance)
+      const supportsTournament = (() => {
+        try { return Boolean(prisma.users?.fields?.tournament_balance); } catch { return false; }
+      })();
+      const baseSelect = { balance: true, demo_balance: true };
       const user = await prisma.users.findUnique({
         where: { id: userId },
-        select: { balance: true, demo_balance: true }
+        select: supportsTournament ? { ...baseSelect, tournament_balance: true } : baseSelect,
       });
 
       if (!user) {
@@ -58,7 +71,7 @@ export async function GET(request) {
       const winningTrades = await prisma.trades.count({
         where: {
           user_id: userId,
-          result: 'win'
+          result: { in: ['win', 'WIN'] }
         }
       });
 
@@ -106,11 +119,26 @@ export async function GET(request) {
         }
       });
 
+      // Determine if user is in any ACTIVE tournament (controls visibility of Tournament account)
+      let activeTournamentCount = 0;
+      try {
+        activeTournamentCount = await prisma.tournament_participants.count({
+          where: {
+            user_id: userId,
+            tournament: { status: 'ACTIVE' }
+          }
+        });
+      } catch {}
+
+      // Current balance is the trading account balance from users table.
+      // Note: Crypto wallet balances are separate and shown via /api/users/wallet.
+  const currentBalance = Number(user.balance || 0);
+
       // Calculate statistics
       const totalDeposits = Number(depositsData._sum.amount || 0);
       const totalWithdrawals = Number(withdrawalsData._sum.amount || 0);
-  const currentBalance = Number(user.balance || 0);
-  const demoBalance = Number(user.demo_balance || 0);
+    const demoBalance = Number(user.demo_balance || 0);
+    const tournamentBalance = supportsTournament ? Number(user?.tournament_balance || 0) : 0;
       const totalTrades = tradesData._count;
       const successRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
       const profitLoss = currentBalance - totalDeposits + totalWithdrawals;
@@ -166,6 +194,8 @@ export async function GET(request) {
           totalWithdrawals,
           currentBalance,
           demoBalance,
+          tournamentBalance,
+          isInActiveTournament: activeTournamentCount > 0,
           totalTrades,
           successRate: Math.round(successRate * 10) / 10,
           profitLoss

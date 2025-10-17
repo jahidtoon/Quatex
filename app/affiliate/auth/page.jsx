@@ -47,21 +47,30 @@ export default function AffiliateAuth() {
       }
 
       if (isLogin) {
-        localStorage.setItem('affiliateToken', 'demo-token-' + Date.now());
+        const res = await fetch('/api/affiliate/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: formData.email, password: formData.password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Login failed');
+        localStorage.setItem('affiliateToken', data.token);
         router.push('/affiliate/dashboard');
       } else {
-        alert('Registration successful! Please login.');
-        setIsLogin(true);
-        setFormData({
-          name: '',
-          email: '',
-          password: '',
-          confirmPassword: ''
+        const res = await fetch('/api/affiliate/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: formData.name, email: formData.email, password: formData.password })
         });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Registration failed');
+        // Auto-login after registration
+        localStorage.setItem('affiliateToken', data.token);
+        router.push('/affiliate/dashboard');
       }
     } catch (error) {
       console.error('Auth error:', error);
-      alert('Authentication failed. Please try again.');
+      alert(error?.message || 'Authentication failed. Please try again.');
     } finally {
       setLoading(false);
     }

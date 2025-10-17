@@ -50,8 +50,8 @@ export async function POST(req) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
-    const { offer_id, amount_asset, amount_fiat } = body || {};
-    if (!offer_id || (!amount_asset && !amount_fiat)) {
+    const { offer_id, amount_usd } = body || {};
+    if (!offer_id || !amount_usd) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -61,54 +61,64 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Offer not found or inactive' }, { status: 404 });
     }
 
-    // Calculate amounts
-    let assetAmount = amount_asset;
-    let fiatAmount = amount_fiat;
-    if (!assetAmount && fiatAmount) {
-      // Calculate asset from fiat
-      if (offer.price_type === 'FIXED' && offer.fixed_price) {
-        assetAmount = fiatAmount / Number(offer.fixed_price);
-      } else {
-        return NextResponse.json({ error: 'Floating price not supported in demo' }, { status: 400 });
-      }
-    }
-    if (!fiatAmount && assetAmount) {
-      if (offer.price_type === 'FIXED' && offer.fixed_price) {
-        fiatAmount = assetAmount * Number(offer.fixed_price);
-      } else {
-        return NextResponse.json({ error: 'Floating price not supported in demo' }, { status: 400 });
-      }
+    // Calculate amounts for USD trading
+    const usdAmount = Number(amount_usd);
+    let fiatAmount = 0;
+    
+    if (offer.price_type === 'FIXED' && offer.fixed_price) {
+      fiatAmount = usdAmount * Number(offer.fixed_price);
+    } else {
+      return NextResponse.json({ error: 'Floating price not supported' }, { status: 400 });
     }
 
     // Validate limits
-    if (assetAmount < offer.min_amount_asset || assetAmount > offer.max_amount_asset) {
-      return NextResponse.json({ error: 'Asset amount out of offer limits' }, { status: 400 });
-    }
-    if (fiatAmount < offer.min_limit_fiat || fiatAmount > offer.max_limit_fiat) {
-      return NextResponse.json({ error: 'Fiat amount out of offer limits' }, { status: 400 });
+    if (usdAmount < offer.min_amount_asset || usdAmount > offer.max_amount_asset) {
+      return NextResponse.json({ error: 'USD amount out of offer limits' }, { status: 400 });
     }
 
-    // SELL: escrow hold
+        // SELL: USD-based escrow hold with detailed validation
     let escrowLedgerId = null;
     if (offer.side === 'SELL') {
-      // Seller must have enough available balance
+      // Seller must have enough USD balance
       const sellerId = offer.user_id;
-      const sellerBalance = await prisma.wallet_ledger.aggregate({
-        _sum: { amount: true },
-        where: { user_id: sellerId, asset: offer.asset_symbol }
+      
+      // Get seller's main USD balance
+      const sellerProfile = await prisma.users.findUnique({
+        where: { id: sellerId },
+        select: { balance: true }
       });
-      const available = Number(sellerBalance._sum.amount || 0);
-      if (available < assetAmount) {
-        return NextResponse.json({ error: 'Seller has insufficient balance for escrow' }, { status: 400 });
+
+      const mainBalance = Number(sellerProfile?.balance || 0);
+      const requiredUSD = usdAmount;
+      
+      if (mainBalance < requiredUSD) {
+        return NextResponse.json({ 
+          error: `Seller has insufficient USD balance. Required: $${requiredUSD.toLocaleString()}, Available: $${mainBalance.toLocaleString()}` 
+        }, { status: 400 });
       }
-      // Create escrow hold ledger
+
+      // Deduct USD from seller's main balance for escrow
+      await prisma.users.update({
+        where: { id: sellerId },
+        data: { balance: mainBalance - requiredUSD }
+      });
+
+      // Create escrow hold ledger record (USD hold, but for asset purchase)
       const escrow = await prisma.wallet_ledger.create({
         data: {
           user_id: sellerId,
           type: 'P2P_ESCROW_HOLD',
-          asset: offer.asset_symbol,
-          amount: -assetAmount,
-          meta: { order_escrow: true, offer_id: offer.id }
+          asset: 'USD', // We hold USD from seller's balance
+          amount: -requiredUSD, // Negative to indicate hold
+          meta: { 
+            order_escrow: true, 
+            offer_id: offer.id,
+            taker_id: user.id,
+            escrow_amount_usd: requiredUSD,
+            target_asset_symbol: 'USD', // Trading USD
+            target_asset_amount: usdAmount,
+            created_for: 'p2p_order_creation'
+          }
         }
       });
       escrowLedgerId = escrow.id;
@@ -121,10 +131,10 @@ export async function POST(req) {
         maker_id: offer.user_id,
         taker_id: user.id,
         side: offer.side,
-        asset_symbol: offer.asset_symbol,
+        asset_symbol: 'USD',
         fiat_currency: offer.fiat_currency,
         price: offer.fixed_price,
-        amount_asset: assetAmount,
+        amount_asset: usdAmount,
         amount_fiat: fiatAmount,
         status: offer.side === 'SELL' ? 'ESCROW_HELD' : 'PENDING',
         escrow_held: offer.side === 'SELL',

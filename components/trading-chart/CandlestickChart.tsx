@@ -16,8 +16,7 @@ import { createHeikinSeries } from './chartTypes/heikin';
 import IndicatorsPanel from './IndicatorsPanel';
 import { IndicatorKey } from './indicators/types';
 import { useIndicators } from './indicators/useIndicators';
-import DrawingToolsPanel from './DrawingToolsPanel';
-import { useDrawingTools } from './drawingTools/useDrawingTools';
+import { useTradeLines } from './useTradeLines';
 
 interface Candle extends CandleType {}
 
@@ -75,16 +74,33 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
   const [showIndicators, setShowIndicators] = useState(false);
   const { active, add, remove, clear, update, updateColors } = useIndicators(chartRef, seriesRef);
 
+  // Trade Line Mode
+  const [tradeLineMode, setTradeLineMode] = useState(false);
+
   // Drawing tools
+  const [drawingTool, setDrawingTool] = useState(null);
+  const [showDrawingMenu, setShowDrawingMenu] = useState(false);
+  const [drawings, setDrawings] = useState([]);
+  const drawingStateRef = useRef({ points: [] });
+
+  // Simple Trade Lines System
   const {
-    activeTool,
-    showPanel: showDrawingPanel,
-    setActiveTool,
-    clearAllTools,
-    togglePanel: toggleDrawingPanel,
-    addDrawingSeries,
-  } = useDrawingTools(chartRef);
+    tradeLines,
+    selectedLine,
+    setSelectedLine,
+    createTradeLine,
+    updateTradeLine,
+    removeTradeLine,
+  } = useTradeLines(chartRef, seriesRef, tradeLineMode);
+
+  // Temporary variables to prevent undefined errors
+  const activeTool = null;
   
+  const toggleTradeLineMode = () => {
+    setTradeLineMode(!tradeLineMode);
+    console.log('🎨 Trade line mode:', !tradeLineMode);
+  };
+
   const priceLinesRef = useRef<Map<string, { line: any; direction: 'BUY' | 'SELL'; series: ISeriesApi<any> }>>(new Map());
   const tradeMarkersSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const openTradesRef = useRef(openTrades);
@@ -301,10 +317,146 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
     return () => { active = false; clearInterval(id); };
   }, [rebuildPriceLines]);
   
-  // Ref to track active tool for event handlers
-  const activeToolRef = useRef(activeTool);
-  activeToolRef.current = activeTool;
+  const createDrawing = useCallback((tool, point1, point2 = null) => {
+    if (!chartRef.current || !seriesRef.current) return;
+    const chart = chartRef.current;
+    const series = seriesRef.current;
+    let drawing = null;
+    if (tool === 'horizontal') {
+      const price = series.coordinateToPrice(point1.y);
+      if (price !== null) {
+        const line = series.createPriceLine({
+          price,
+          color: '#FF6B35',
+          lineWidth: 2,
+          lineStyle: 0,
+          axisLabelVisible: true,
+          title: `H-Line ${drawings.length + 1}`,
+        });
+        drawing = {
+          id: Date.now().toString(),
+          type: 'horizontal',
+          price,
+          line,
+        };
+      }
+    } else if (tool === 'vertical') {
+      const time = chart.timeScale().coordinateToTime(point1.x);
+      if (time !== null) {
+        const lineSeries = chart.addLineSeries({
+          color: '#FF6B35',
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
 
+        // Use fixed values that span a wide price range.
+        // Ensure ascending time order by using small offsets around the chosen time.
+  const minPrice = 0;
+  const maxPrice = 1000000; // Very high default
+  const baseRaw = Number((time as any));
+  if (!Number.isFinite(baseRaw)) return; // safety
+  const base = Math.floor(baseRaw);
+  const t1 = base - 1;
+  const t2 = base + 1;
+        const p1 = { time: t1 as any, value: minPrice };
+        const p2 = { time: t2 as any, value: maxPrice };
+        lineSeries.setData([p1, p2]);
+
+        drawing = {
+          id: Date.now().toString(),
+          type: 'vertical',
+          time,
+          series: lineSeries,
+        };
+      }
+    } else if (tool === 'trend' && point2) {
+      const price1 = series.coordinateToPrice(point1.y);
+      const price2 = series.coordinateToPrice(point2.y);
+      const time1 = chart.timeScale().coordinateToTime(point1.x);
+      const time2 = chart.timeScale().coordinateToTime(point2.x);
+      if (price1 !== null && price2 !== null && time1 !== null && time2 !== null) {
+        const lineSeries = chart.addLineSeries({
+          color: '#FF6B35',
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+        });
+        // Ensure ascending time order to satisfy lightweight-charts
+        const n1Raw = Number((time1 as any));
+        const n2Raw = Number((time2 as any));
+        if (!Number.isFinite(n1Raw) || !Number.isFinite(n2Raw)) return; // safety
+        const n1 = Math.floor(n1Raw);
+        const n2 = Math.floor(n2Raw);
+        let tA: any = time1 as any;
+        let vA = price1;
+        let tB: any = time2 as any;
+        let vB = price2;
+        if (Number.isFinite(n1) && Number.isFinite(n2)) {
+          if (n1 === n2) {
+            tA = (n1 - 1) as any;
+            tB = (n2 + 1) as any;
+          } else if (n1 > n2) {
+            tA = time2 as any; vA = price2; tB = time1 as any; vB = price1;
+          }
+        }
+        const a = { time: tA, value: vA } as const;
+        const b = { time: tB, value: vB } as const;
+        lineSeries.setData([a, b]);
+        drawing = {
+          id: Date.now().toString(),
+          type: 'trend',
+          start: { time: a.time, price: a.value },
+          end: { time: b.time, price: b.value },
+          series: lineSeries,
+        };
+      }
+    }
+    if (drawing) {
+      setDrawings(prev => [...prev, drawing]);
+    }
+  }, [drawings.length]);
+
+  // Clear all drawings helper
+  const clearAllDrawings = useCallback(() => {
+    const chart = chartRef.current;
+    const s = seriesRef.current;
+    drawings.forEach(d => {
+      if (d.line && s) {
+        try { (s as any).removePriceLine(d.line); } catch {}
+      }
+      if (d.series && chart) {
+        try { chart.removeSeries(d.series); } catch {}
+      }
+    });
+    setDrawings([]);
+    drawingStateRef.current.points = [];
+    setDrawingTool(null);
+  }, [drawings]);
+  
+  // Drawing tools
+  useEffect(() => {
+    if (!drawingTool || !chartRef.current) return;
+    const handleClick = (param) => {
+      if (!param.point) return;
+      if (drawingTool === 'horizontal' || drawingTool === 'vertical') {
+        createDrawing(drawingTool, param.point);
+      } else {
+        drawingStateRef.current.points.push(param.point);
+        if (drawingStateRef.current.points.length >= 2) {
+          createDrawing(drawingTool, drawingStateRef.current.points[0], drawingStateRef.current.points[1]);
+          drawingStateRef.current.points = [];
+        }
+      }
+    };
+    chartRef.current.subscribeClick(handleClick);
+    return () => {
+      if (chartRef.current) {
+        chartRef.current.unsubscribeClick(handleClick);
+      }
+    };
+  }, [drawingTool, createDrawing]);
+  
   // Assets loaded from backend (includes Forex + Crypto). Fallback to popular crypto list if API unavailable.
   const [assetList, setAssetList] = useState<Array<{symbol:string; display?:string; type?:string; payout?:number}>>([]);
   const [assetsLoading, setAssetsLoading] = useState<boolean>(false);
@@ -798,288 +950,9 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
       }
     } catch {}
 
-        // Drawing tools event handlers
-        let isDrawing = false;
-        let startPoint: { time: number; price: number } | null = null;
-        let currentDrawing: any = null;
-        let mouseDown = false;
+        // Resize handler for window changes
 
-        // Utility: compute visible price bounds from current data/time range
-        const getVisiblePriceBounds = () => {
-          const chart = chartRef.current;
-          if (!chart || !lastCandlesRef.current.length) return null;
-          const tr = chart.timeScale().getVisibleRange();
-          if (!tr) return null;
-          const from = (tr.from as unknown as number);
-          const to = (tr.to as unknown as number);
-          const subset = lastCandlesRef.current.filter((c) => {
-            const t = (c.time as unknown as number);
-            return t >= from && t <= to;
-          });
-          if (!subset.length) return null;
-          const lows = subset.map((c) => (c.low ?? c.close ?? c.open));
-          const highs = subset.map((c) => (c.high ?? c.close ?? c.open));
-          const min = Math.min(...lows);
-          const max = Math.max(...highs);
-          return { min, max };
-        };
 
-        const handleMouseDown = (event: MouseEvent) => {
-          if (!activeToolRef.current || !chartRef.current || !seriesRef.current) return;
-          const rect = containerRef.current?.getBoundingClientRect();
-          if (!rect) return;
-          const x = event.clientX - rect.left;
-          const y = event.clientY - rect.top;
-          const time = chartRef.current.timeScale().coordinateToTime(x);
-          const price = (seriesRef.current as any).coordinateToPrice(y);
-          if (!time || price == null) return;
-          mouseDown = true;
-          startPoint = { time: time as number, price };
-          isDrawing = true;
-          console.log(`🎨 Started drawing ${activeToolRef.current} at`, startPoint);
-        };
-
-        const handleMouseUp = (event: MouseEvent) => {
-          if (!mouseDown || !activeToolRef.current || !startPoint || !chartRef.current || !seriesRef.current) return;
-          const rect = containerRef.current?.getBoundingClientRect();
-          if (!rect) return;
-          const x = event.clientX - rect.left;
-          const y = event.clientY - rect.top;
-          const time = chartRef.current.timeScale().coordinateToTime(x);
-          const price = (seriesRef.current as any).coordinateToPrice(y);
-          if (!time || price == null) return;
-          mouseDown = false;
-          let endPoint = { time: time as number, price };
-
-          console.log(`🎨 Creating ${activeToolRef.current} from`, startPoint, 'to', endPoint);
-
-      // Create the actual drawing on the chart
-      if (chartRef.current) {
-        switch (activeToolRef.current) {
-          case 'trendline':
-            currentDrawing = chartRef.current.addLineSeries({
-              color: '#3b82f6',
-              lineWidth: 2,
-              crosshairMarkerVisible: false,
-              priceLineVisible: false,
-              lastValueVisible: false,
-            });
-            {
-              // Enforce strictly ascending, unique time values
-              let p1 = { time: startPoint.time as number, value: startPoint.price };
-              let p2 = { time: endPoint.time as number, value: endPoint.price };
-              let a = p1.time <= p2.time ? p1 : p2;
-              let b = p1.time <= p2.time ? p2 : p1;
-              if (b.time <= a.time) b = { ...b, time: a.time + 1 };
-              currentDrawing.setData([a, b]);
-            }
-            addDrawingSeries(currentDrawing);
-            break;
-
-          case 'horizontal':
-            currentDrawing = chartRef.current.addLineSeries({
-              color: '#ef4444',
-              lineWidth: 2,
-              crosshairMarkerVisible: false,
-              priceLineVisible: false,
-              lastValueVisible: false,
-            });
-            const timeRange = chartRef.current.timeScale().getVisibleRange();
-            if (timeRange) {
-              const from = (timeRange.from as unknown as number);
-              const to = (timeRange.to as unknown as number);
-              const left = Math.min(from, to);
-              let right = Math.max(from, to);
-              if (right <= left) right = left + 1;
-              currentDrawing.setData([
-                { time: left as any, value: startPoint.price },
-                { time: right as any, value: startPoint.price }
-              ]);
-            }
-            addDrawingSeries(currentDrawing);
-            break;
-
-          case 'vertical': {
-            currentDrawing = chartRef.current.addLineSeries({
-              color: '#10b981',
-              lineWidth: 2,
-              crosshairMarkerVisible: false,
-              priceLineVisible: false,
-              lastValueVisible: false,
-            });
-            const bounds = getVisiblePriceBounds();
-            // Compute vertical bounds without mixing nullish coalescing with logical operators
-            const min = bounds?.min ?? (Math.min(startPoint.price, endPoint.price) - Math.abs(endPoint.price - startPoint.price));
-            const max = bounds?.max ?? (Math.max(startPoint.price, endPoint.price) + Math.abs(endPoint.price - startPoint.price));
-            const t1 = startPoint.time as number;
-            const t2 = t1 + 1; // ensure strictly increasing time
-            currentDrawing.setData([
-              { time: t1 as any, value: min },
-              { time: t2 as any, value: max }
-            ]);
-            addDrawingSeries(currentDrawing);
-            break;
-          }
-
-          case 'rectangle': {
-            // Render rectangle outline using four line series
-            const tLeft = Math.min(startPoint.time as number, endPoint.time as number);
-            let tRight = Math.max(startPoint.time as number, endPoint.time as number);
-            if (tRight <= tLeft) tRight = tLeft + 1;
-            const pTop = Math.max(startPoint.price, endPoint.price);
-            const pBottom = Math.min(startPoint.price, endPoint.price);
-
-            const commonOpts = {
-              lineWidth: 2,
-              crosshairMarkerVisible: false,
-              priceLineVisible: false,
-              lastValueVisible: false,
-            };
-
-            const topLine = chartRef.current.addLineSeries({ color: '#3b82f6', ...commonOpts });
-            topLine.setData([
-              { time: tLeft as any, value: pTop },
-              { time: tRight as any, value: pTop },
-            ]);
-            addDrawingSeries(topLine);
-
-            const bottomLine = chartRef.current.addLineSeries({ color: '#3b82f6', ...commonOpts });
-            bottomLine.setData([
-              { time: tLeft as any, value: pBottom },
-              { time: tRight as any, value: pBottom },
-            ]);
-            addDrawingSeries(bottomLine);
-
-            const leftEdge = chartRef.current.addLineSeries({ color: '#3b82f6', ...commonOpts });
-            leftEdge.setData([
-              { time: tLeft as any, value: pBottom },
-              { time: (tLeft + 1) as any, value: pTop },
-            ]);
-            addDrawingSeries(leftEdge);
-
-            const rightEdge = chartRef.current.addLineSeries({ color: '#3b82f6', ...commonOpts });
-            rightEdge.setData([
-              { time: tRight as any, value: pBottom },
-              { time: (tRight + 1) as any, value: pTop },
-            ]);
-            addDrawingSeries(rightEdge);
-            break;
-          }
-
-          case 'fibonacci':
-            const fibLevels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
-            const fibColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6'];
-            
-            fibLevels.forEach((level, index) => {
-              const fibPrice = startPoint.price + (endPoint.price - startPoint.price) * level;
-              const fibLine = chartRef.current.addLineSeries({
-                color: fibColors[index],
-                lineWidth: 1,
-                crosshairMarkerVisible: false,
-                priceLineVisible: false,
-                lastValueVisible: false,
-              });
-              const timeRange = chartRef.current.timeScale().getVisibleRange();
-              if (timeRange) {
-                const from = (timeRange.from as unknown as number);
-                const to = (timeRange.to as unknown as number);
-                const left = Math.min(from, to);
-                let right = Math.max(from, to);
-                if (right <= left) right = left + 1;
-                fibLine.setData([
-                  { time: left as any, value: fibPrice },
-                  { time: right as any, value: fibPrice }
-                ]);
-              }
-              addDrawingSeries(fibLine);
-            });
-            break;
-
-          case 'arrow':
-            currentDrawing = chartRef.current.addLineSeries({
-              color: '#f59e0b',
-              lineWidth: 3,
-              crosshairMarkerVisible: false,
-              priceLineVisible: false,
-              lastValueVisible: false,
-            });
-            {
-              let p1 = { time: startPoint.time as number, value: startPoint.price };
-              let p2 = { time: endPoint.time as number, value: endPoint.price };
-              let a = p1.time <= p2.time ? p1 : p2;
-              let b = p1.time <= p2.time ? p2 : p1;
-              if (b.time <= a.time) b = { ...b, time: a.time + 1 };
-              currentDrawing.setData([a, b]);
-            }
-            currentDrawing.setMarkers([{
-              time: endPoint.time,
-              position: 'inBar',
-              color: '#f59e0b',
-              shape: 'arrowUp',
-              text: '→'
-            }]);
-            addDrawingSeries(currentDrawing);
-            break;
-
-          case 'text':
-            if (seriesRef.current) {
-              (seriesRef.current as any).setMarkers([{
-                time: startPoint.time,
-                position: 'aboveBar',
-                color: '#ffffff',
-                shape: 'circle',
-                text: 'TEXT'
-              }]);
-            }
-            break;
-
-          case 'brush':
-            currentDrawing = chartRef.current.addLineSeries({
-              color: '#ec4899',
-              lineWidth: 2,
-              crosshairMarkerVisible: false,
-              priceLineVisible: false,
-              lastValueVisible: false,
-            });
-            {
-              let p1 = { time: startPoint.time as number, value: startPoint.price };
-              let p2 = { time: endPoint.time as number, value: endPoint.price };
-              let a = p1.time <= p2.time ? p1 : p2;
-              let b = p1.time <= p2.time ? p2 : p1;
-              if (b.time <= a.time) b = { ...b, time: a.time + 1 };
-              currentDrawing.setData([a, b]);
-            }
-            addDrawingSeries(currentDrawing);
-            break;
-
-          case 'eraser':
-            clearAllTools();
-            break;
-        }
-      }
-
-      isDrawing = false;
-      startPoint = null;
-      currentDrawing = null;
-    };
-
-    // Add mouse event listeners to the chart container
-    const chartContainer = containerRef.current;
-    if (chartContainer) {
-      chartContainer.addEventListener('mousedown', handleMouseDown);
-      chartContainer.addEventListener('mouseup', handleMouseUp);
-      window.addEventListener('mouseup', handleMouseUp);
-
-      // Store cleanup function
-      const cleanup = () => {
-        chartContainer.removeEventListener('mousedown', handleMouseDown);
-        chartContainer.removeEventListener('mouseup', handleMouseUp);
-        window.removeEventListener('mouseup', handleMouseUp);
-      };
-      
-      // Store cleanup in a way we can access it in the return function
-      (chart as any)._drawingCleanup = cleanup;
-    }
 
     const handleResize = () => {
       chart.applyOptions({ autoSize: true });
@@ -1110,6 +983,16 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
       if ((chart as any)._drawingCleanup) {
         (chart as any)._drawingCleanup();
       }
+      // Clean up drawings
+      drawings.forEach(d => {
+        if (d.line && seriesRef.current) {
+          try { seriesRef.current.removePriceLine(d.line); } catch {}
+        }
+        if (d.series) {
+          try { chart.removeSeries(d.series); } catch {}
+        }
+      });
+      setDrawings([]);
       clearPriceLines(seriesRef.current);
       if (tradeMarkersSeriesRef.current) {
         try {
@@ -1141,6 +1024,10 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
       } else {
   applySeriesDataForType(chartTypeRef.current);
       }
+      
+      // Subscribe to price scale changes for vertical line updates
+      // Note: Price scale subscription methods are not available in this version
+      // Vertical lines use fixed price ranges and are not dynamically updated
       
       // Update parent component with initial price
       if (candles.length > 0 && onPriceUpdate) {
@@ -1181,6 +1068,11 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
       }
       // If autoScroll is false, preserve current chart position
       setLoading(false);
+      
+      // Cleanup function for this effect
+      return () => {
+        // No subscriptions to clean up
+      };
     });
     // Phase 1 Fix: More frequent updates with better performance (1 second for live data)
     const fetchingRef = { current: false } as { current: boolean };
@@ -1279,12 +1171,12 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
         rowGap: 0
       }}
     >
-      {/* Header Bar */}
+      {/* Header Bar (kept minimal: symbol + live status) */}
       <div
         style={{
           gridArea: 'header',
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gridTemplateColumns: '1fr',
           alignItems: 'center',
           gap: 12,
           padding: '12px 16px',
@@ -1295,7 +1187,7 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
           zIndex: 5
         }}
       >
-        {/* Left cluster: Symbol + Status */}
+        {/* Symbol selector + Live status */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
           <div style={{ color: '#9ca3af', fontSize: 12 }}>Symbol</div>
           <select
@@ -1354,130 +1246,6 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
             {loading ? 'Loading…' : 'Live'}
           </div>
         </div>
-
-        {/* Center cluster: Timeframes */}
-        <div
-          className="no-scrollbar"
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            justifyContent: 'center',
-            gap: 6,
-            padding: '4px 6px',
-            borderRadius: 8,
-            background: '#0d1220',
-            border: '1px solid #1f2a3a',
-            minWidth: 0,
-            width: '100%'
-          }}
-        >
-          {(['5s','10s','15s','30s','1m','5m','15m','1h','4h','1d'] as const).map(iv => {
-            const labelMap: Record<string,string> = { '5s':'5S','10s':'10S','15s':'15S','30s':'30S','1m':'1M','5m':'5M','15m':'15M','1h':'1H','4h':'4H','1d':'1D' };
-            const active = tf === iv;
-            return (
-              <button key={iv}
-                onClick={() => handleSetTf(iv)}
-                style={{
-                  background: active? '#1f2937':'#111827', color:'#e5e7eb', border:'1px solid #374151',
-                  padding:'6px 10px', borderRadius:6, cursor:'pointer', whiteSpace: 'nowrap',
-                  boxShadow: active ? '0 2px 8px rgba(59,130,246,0.25)' : 'none'
-                }}
-              >{labelMap[iv]}</button>
-            );
-          })}
-        </div>
-
-        {/* Right cluster: Type / Auto / Panels */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-          {/* Chart type selector */}
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => setShowTypeMenu(s => !s)}
-              style={{ background:'#111827', color:'#e5e7eb', border:'1px solid #374151', padding:'6px 10px', borderRadius:6, cursor:'pointer' }}
-            >Type ▾</button>
-            {showTypeMenu && (
-              <div style={{ position:'absolute', top: '110%', right: 0, background:'#0f1220', border:'1px solid #243042', borderRadius:8, padding:6, display:'grid', gap:4, zIndex:20 }}>
-                {[
-                  {key:'candles', label:'Candles'},
-                  {key:'hollow', label:'Hollow Candles'},
-                  {key:'bars', label:'Bars'},
-                  {key:'line', label:'Line'},
-                  {key:'area', label:'Area'},
-                  {key:'baseline', label:'Baseline'},
-                  {key:'heikin', label:'Heikin Ashi'},
-                ].map(opt => (
-                  <button key={opt.key}
-                    onClick={() => handleChartTypeChange(opt.key as any)}
-                    disabled={isChangingType}
-                    style={{ 
-                      textAlign:'left', 
-                      background: chartType===opt.key?'#1f2937':'#111827', 
-                      color: isChangingType ? '#666' : '#e5e7eb', 
-                      border:'1px solid #374151', 
-                      padding:'6px 10px', 
-                      borderRadius:6, 
-                      cursor: isChangingType ? 'wait' : 'pointer',
-                      opacity: isChangingType ? 0.6 : 1
-                    }}
-                  >{opt.label}</button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Auto-scroll toggle */}
-          <button
-            onClick={() => {
-              const newAutoScroll = !autoScroll;
-              setAutoScroll(newAutoScroll);
-              autoScrollRef.current = newAutoScroll;
-              if (newAutoScroll) {
-                rangeModeRef.current = 'auto';
-                applyZoomToTf(tfRef.current);
-              }
-            }}
-            style={{
-              background: autoScroll ? '#059669' : '#111827',
-              color: '#e5e7eb',
-              border: '1px solid #374151',
-              padding: '6px 10px',
-              borderRadius: 6,
-              cursor: 'pointer'
-            }}
-          >
-            📺 {autoScroll ? 'Auto' : 'Manual'}
-          </button>
-
-          {/* Indicators toggle */}
-          <button
-            onClick={() => setShowIndicators(s => !s)}
-            style={{
-              background: showIndicators ? '#1f2937' : '#111827',
-              color: '#e5e7eb',
-              border: '1px solid #374151',
-              padding: '6px 10px',
-              borderRadius: 6,
-              cursor: 'pointer'
-            }}
-          >
-            📊 Indicators
-          </button>
-
-          {/* Drawing Tools toggle */}
-          <button
-            onClick={toggleDrawingPanel}
-            style={{
-              background: showDrawingPanel || activeTool ? '#1f2937' : '#111827',
-              color: '#e5e7eb',
-              border: '1px solid #374151',
-              padding: '6px 10px',
-              borderRadius: 6,
-              cursor: 'pointer'
-            }}
-          >
-            🎨 Drawing
-          </button>
-        </div>
       </div>
 
       {/* Popup Panels */}
@@ -1502,24 +1270,193 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
         />
       )}
       
-      {showDrawingPanel && (
-        <DrawingToolsPanel
-          activeTool={activeTool}
-          onToolSelect={setActiveTool}
-          onClearAll={clearAllTools}
-          onClose={() => {
-            setActiveTool(null);
-            toggleDrawingPanel();
-          }}
-          docked={false}
-        />
-      )}
-
       {/* Chart Area */}
       <div style={{ gridArea: 'main', display: 'flex', justifyContent: 'center', alignItems: 'stretch', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
         {/* Center wrapper to mimic QuoteX style and leave side space for future widgets */}
         <div style={{ position: 'relative', width: '100%', maxWidth: 1400, flex: 1, margin: '0 auto', height: '100%', minWidth: 0, minHeight: 0 }}>
           <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
+          {/* Floating Tools Dock - bottom-left */}
+          <div
+            style={{
+              position: 'absolute',
+              left: 14,
+              bottom: 14,
+              display: 'flex',
+              alignItems: 'stretch',
+              gap: 10,
+              background: 'rgba(13,18,32,0.75)',
+              border: '1px solid rgba(36,48,66,0.9)',
+              borderRadius: 10,
+              padding: '10px 10px',
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+              zIndex: 20
+            }}
+          >
+            {/* Vertical tool icons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {/* Timeframe toggle button */}
+              <button
+                title="Timeframes"
+                onClick={() => setShowTfTray(v => !v)}
+                style={{ width: 34, height: 34, display: 'grid', placeItems: 'center', background:'#111827', color:'#e5e7eb', border:'1px solid #374151', borderRadius: 8, cursor: 'pointer' }}
+              >TF</button>
+
+              {/* Drawing menu (single entry) */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  title="Drawing Tools"
+                  onClick={() => setShowDrawingMenu(s => !s)}
+                  style={{ width: 34, height: 34, display: 'grid', placeItems: 'center', background: drawingTool ? '#1f2937' : '#111827', color:'#e5e7eb', border:'1px solid #374151', borderRadius: 8, cursor: 'pointer' }}
+                >🎨</button>
+                {showDrawingMenu && (
+                  <div style={{ position:'absolute', bottom: '110%', left: 0, background:'#0f1220', border:'1px solid #243042', borderRadius:8, padding:6, display:'grid', gap:4, zIndex:20, minWidth: 180 }}>
+                    {[
+                      {key:'trend', label:'Trend Line'},
+                      {key:'horizontal', label:'Horizontal Line'},
+                      {key:'vertical', label:'Vertical Line'},
+                      {key:null, label:'None'},
+                      {key:'__clear__', label:'Clear All'},
+                    ].map(opt => (
+                      <button key={String(opt.key)}
+                        onClick={() => {
+                          if (opt.key === '__clear__') { clearAllDrawings(); setShowDrawingMenu(false); return; }
+                          setDrawingTool(opt.key);
+                          setShowDrawingMenu(false);
+                          if (opt.key) setTradeLineMode(false);
+                          drawingStateRef.current.points = [];
+                        }}
+                        style={{ textAlign:'left', background: (opt.key && drawingTool===opt.key)?'#1f2937':'#111827', color:'#e5e7eb', border:'1px solid #374151', padding:'6px 10px', borderRadius:6, cursor:'pointer' }}
+                      >{opt.label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Trade Lines button removed as requested */}
+
+              {/* Indicators */}
+              <button
+                title="Indicators"
+                onClick={() => setShowIndicators(s => !s)}
+                style={{ width: 34, height: 34, display: 'grid', placeItems: 'center', background: showIndicators ? '#1f2937' : '#111827', color:'#e5e7eb', border:'1px solid #374151', borderRadius: 8, cursor: 'pointer' }}
+              >𝌆</button>
+
+              {/* Chart type with popover */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  title="Chart Type"
+                  onClick={() => setShowTypeMenu(s => !s)}
+                  style={{ width: 34, height: 34, display: 'grid', placeItems: 'center', background:'#111827', color:'#e5e7eb', border:'1px solid #374151', borderRadius: 8, cursor: 'pointer' }}
+                >T</button>
+                {showTypeMenu && (
+                  <div style={{ position:'absolute', bottom: '110%', left: 0, background:'#0f1220', border:'1px solid #243042', borderRadius:8, padding:6, display:'grid', gap:4, zIndex:20 }}>
+                    {[
+                      {key:'candles', label:'Candles'},
+                      {key:'hollow', label:'Hollow Candles'},
+                      {key:'bars', label:'Bars'},
+                      {key:'line', label:'Line'},
+                      {key:'area', label:'Area'},
+                      {key:'baseline', label:'Baseline'},
+                      {key:'heikin', label:'Heikin Ashi'},
+                    ].map(opt => (
+                      <button key={opt.key}
+                        onClick={() => handleChartTypeChange(opt.key as any)}
+                        disabled={isChangingType}
+                        style={{ textAlign:'left', background: chartType===opt.key?'#1f2937':'#111827', color: isChangingType ? '#666' : '#e5e7eb', border:'1px solid #374151', padding:'6px 10px', borderRadius:6, cursor: isChangingType ? 'wait' : 'pointer', opacity: isChangingType ? 0.6 : 1 }}
+                      >{opt.label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Auto/Manual */}
+              <button
+                title="Auto scroll"
+                onClick={() => { const newAutoScroll = !autoScroll; setAutoScroll(newAutoScroll); autoScrollRef.current = newAutoScroll; if (newAutoScroll) { rangeModeRef.current = 'auto'; applyZoomToTf(tfRef.current); } }}
+                style={{ width: 34, height: 34, display: 'grid', placeItems: 'center', background: autoScroll ? '#059669' : '#111827', color:'#e5e7eb', border:'1px solid #374151', borderRadius: 8, cursor: 'pointer' }}
+              >{autoScroll ? 'A' : 'M'}</button>
+            </div>
+
+            {/* Divider */}
+            <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(55,65,81,0.6)' }} />
+
+            {/* Timeframes tray (toggle) */}
+            {showTfTray && (
+              <div
+                className="no-scrollbar"
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 6,
+                  padding: '4px 6px',
+                  borderRadius: 8,
+                  background: 'rgba(7,10,18,0.6)',
+                  border: '1px solid #1f2a3a',
+                  maxWidth: 560,
+                  overflowX: 'auto'
+                }}
+              >
+                {(['5s','10s','15s','30s','1m','5m','15m','1h','4h','1d'] as const).map(iv => {
+                  const labelMap: Record<string,string> = { '5s':'5S','10s':'10S','15s':'15S','30s':'30S','1m':'1M','5m':'5M','15m':'15M','1h':'1H','4h':'4H','1d':'1D' };
+                  const active = tf === iv;
+                  return (
+                    <button key={iv}
+                      onClick={() => { handleSetTf(iv); setShowTfTray(false); }}
+                      style={{
+                        background: active? '#1f2937':'#111827', color:'#e5e7eb', border:'1px solid #374151',
+                        padding:'6px 10px', borderRadius:6, cursor:'pointer', whiteSpace: 'nowrap',
+                        boxShadow: active ? '0 2px 8px rgba(59,130,246,0.25)' : 'none'
+                      }}
+                    >{labelMap[iv]}</button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Timeframe badge like screenshot */}
+          <div
+            onClick={() => setShowTfTray(v => !v)}
+            title="Change timeframe"
+            style={{ position: 'absolute', left: 12, bottom: showTfTray ? 70 : 60, background: 'rgba(17,24,39,0.9)', color:'#e5e7eb', border:'1px solid #374151', padding:'4px 8px', borderRadius: 6, fontSize: 12, cursor: 'pointer', userSelect: 'none', zIndex: 15 }}
+          >{tf.toUpperCase()}</div>
+          
+          {/* Trade Lines status overlay removed */}
+          
+          {/* Drawings Status */}
+          {(drawings.length > 0 || drawingTool) && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                background: 'rgba(16, 19, 26, 0.9)',
+                color: '#d1d5db',
+                padding: '8px 12px',
+                borderRadius: 6,
+                fontSize: 12,
+                border: '1px solid #333',
+                zIndex: 10
+              }}
+            >
+              {drawingTool && (
+                <div style={{ color: '#FF6B35', fontWeight: 'bold' }}>
+                  🎨 Drawing: {drawingTool}
+                </div>
+              )}
+              {drawings.length > 0 && (
+                <div>Drawings: {drawings.length}</div>
+              )}
+              {drawingTool === 'trend' && drawingStateRef.current.points.length === 1 && (
+                <div style={{ fontSize: 10, color: '#888' }}>
+                  Click second point for trend line
+                </div>
+              )}
+            </div>
+          )}
+          
           {/* Countdown overlay (next candle time) - Bottom center like reference */}
           <div
             style={{

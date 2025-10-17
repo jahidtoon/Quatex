@@ -40,7 +40,10 @@ export async function GET(request) {
     const analytics = await getUserAnalyticsData(userId);
 
     // Derive some extra computed fields for the frontend convenience
-    const totalProfitApprox = analytics.financial.netDeposits; // placeholder until PnL calc implemented
+    // Use trading.averageDailyProfit when available; otherwise fall back to netDeposits as a placeholder
+    const totalProfitApprox = typeof analytics?.trading?.averageDailyProfit === 'number'
+      ? analytics.trading.averageDailyProfit
+      : analytics.financial.netDeposits;
     const successRate = analytics.trading.totalTrades > 0
       ? (analytics.trading.winningTrades / analytics.trading.totalTrades) * 100
       : 0;

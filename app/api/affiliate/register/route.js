@@ -1,33 +1,28 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import prisma from '@/lib/prisma';
 
-// Mock database for demo
-let affiliates = [
-  {
-    id: 'AFF001',
-    name: 'Demo Affiliate',
-    email: 'demo@affiliate.com',
-    password: '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj76pqKpWVWG', // demo123
-    phone: '+1234567890',
-    country: 'BD',
-    status: 'Active',
-    tier: 'Gold',
-    joinDate: '2024-01-15',
-    referralCode: 'AFF001',
-    totalReferrals: 156,
-    activeReferrals: 89,
-    totalEarnings: 15420.50,
-    pendingPayments: 890.00
-  }
-];
-
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export async function POST(request) {
   try {
     const { name, email, password, phone, country, referralCode } = await request.json();
 
     // Check if affiliate already exists
-    const existingAffiliate = affiliates.find(affiliate => affiliate.email === email);
+    let existingAffiliate;
+    try {
+      existingAffiliate = await prisma.affiliates.findUnique({ where: { email } });
+    } catch (e) {
+      if (e && e.code === 'P2021') {
+        return NextResponse.json(
+          { error: 'Database not migrated (affiliates table missing). Please run: npm run prisma:migrate && npm run prisma:seed' },
+          { status: 500 }
+        );
+      }
+      console.error('Affiliate register DB error:', e);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
     if (existingAffiliate) {
       return NextResponse.json(
         { error: 'Affiliate already exists with this email' },
@@ -38,43 +33,52 @@ export async function POST(request) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Generate unique affiliate ID
-    const affiliateId = `AFF${String(affiliates.length + 1).padStart(3, '0')}`;
+    // Generate unique referral_code
+    const baseCode = `AFF${Math.floor(Math.random() * 900000 + 100000)}`;
+    // ensure unique
+    let referral_code = baseCode;
+    const exists = await prisma.affiliates.findUnique({ where: { referral_code } });
+    if (exists) {
+      referral_code = `AFF${Date.now().toString().slice(-6)}`;
+    }
 
-    // Create new affiliate
-    const newAffiliate = {
-      id: affiliateId,
-      name,
-      email,
-      password: hashedPassword,
-      phone: phone || '',
-      country: country || '',
-      status: 'Active',
-      tier: 'Bronze',
-      joinDate: new Date().toISOString().split('T')[0],
-      referralCode: affiliateId,
-      totalReferrals: 0,
-      activeReferrals: 0,
-      totalEarnings: 0,
-      pendingPayments: 0,
-      referredBy: referralCode || null
-    };
-
-    affiliates.push(newAffiliate);
+    // Create new affiliate in DB
+    const created = await prisma.affiliates.create({
+      data: {
+        name,
+        email,
+        password_hash: hashedPassword,
+        phone: phone || null,
+        country: country || null,
+        status: 'Active',
+        tier: 'Bronze',
+        commission_rate: 30,
+        referral_code,
+      }
+    });
 
     // Generate JWT token
     const token = jwt.sign(
       { 
-        affiliateId: newAffiliate.id, 
-        email: newAffiliate.email,
+        affiliateId: created.id, 
+        email: created.email,
         type: 'affiliate'
       },
       process.env.JWT_SECRET || 'fallback-secret',
       { expiresIn: '7d' }
     );
 
-    // Remove password from response
-    const { password: _, ...affiliateData } = newAffiliate;
+    const affiliateData = {
+      id: created.id,
+      name: created.name,
+      email: created.email,
+      phone: created.phone,
+      country: created.country,
+      status: created.status,
+      tier: created.tier,
+      referralCode: created.referral_code,
+      commissionRate: created.commission_rate
+    };
 
     return NextResponse.json({
       message: 'Affiliate registered successfully',
@@ -83,7 +87,7 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('Registration error:', error && (error.stack || error.message || error));
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

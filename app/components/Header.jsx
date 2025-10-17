@@ -3,14 +3,21 @@ import React, { useState, useEffect } from 'react';
 import { useClickOutside } from '../../lib/useClickOutside';
 import { useAuth } from '../../lib/AuthContext';
 import { useApi } from '../../lib/hooks';
+import { CURRENCIES, formatCurrency, getCurrencySymbol } from '@/lib/currency';
 
 const Header = ({ setCurrentPage }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showSignupModal, setShowSignupModal] = useState(false);
-  const { user, token, login, logout, loading } = useAuth();
+  const { user, token, login, logout, loading, accountType, setAccountType, refreshSession } = useAuth();
   const { apiCall } = useApi();
   const [liveBalance, setLiveBalance] = useState(null);
+  const [demoBalance, setDemoBalance] = useState(null);
+  const [tournamentBalance, setTournamentBalance] = useState(null);
+  const [acctDropdownOpen, setAcctDropdownOpen] = useState(false);
+  const [inActiveTournament, setInActiveTournament] = useState(false);
+  const [displayCurrency, setDisplayCurrency] = useState('USD');
+  const [convertedBalances, setConvertedBalances] = useState({ live: null, demo: null, tournament: null });
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [signupForm, setSignupForm] = useState({ 
     firstName: '', 
@@ -123,6 +130,13 @@ const Header = ({ setCurrentPage }) => {
     window.location.href = '/withdrawal';
   };
 
+  // Initialize preferred currency from user profile
+  useEffect(() => {
+    if (user?.preferred_currency) {
+      setDisplayCurrency(user.preferred_currency);
+    }
+  }, [user]);
+
   // Fetch fresh live account balance so header doesn't show 0.00 from stale user context
   useEffect(() => {
     let cancelled = false;
@@ -131,25 +145,108 @@ const Header = ({ setCurrentPage }) => {
       if (!user || !token) return;
       try {
         const resp = await apiCall('/api/users/stats');
-        const bal = Number(resp?.stats?.currentBalance ?? 0);
-        if (!cancelled) setLiveBalance(bal);
+  const bal = Number(resp?.stats?.currentBalance ?? 0);
+  const demo = Number(resp?.stats?.demoBalance ?? user?.demo_balance ?? 0);
+  const tour = Number(resp?.stats?.tournamentBalance ?? user?.tournament_balance ?? 0);
+        if (!cancelled) {
+          setLiveBalance(bal);
+          setDemoBalance(demo);
+          setTournamentBalance(tour);
+          setInActiveTournament(Boolean(resp?.stats?.isInActiveTournament));
+        }
       } catch (_) {
         // ignore; fallback to user.balance
       }
+    };
+
+    const onBalanceUpdated = () => {
+      fetchBalance();
     };
 
     if (user) {
       fetchBalance();
       // light polling to keep it reasonably fresh while user is active
       const id = setInterval(fetchBalance, 15000);
+      window.addEventListener('wallet:balance-updated', onBalanceUpdated);
       return () => {
         cancelled = true;
         clearInterval(id);
+        window.removeEventListener('wallet:balance-updated', onBalanceUpdated);
       };
     } else {
       setLiveBalance(null);
     }
   }, [user, token]);
+
+  // Ensure we never show tournament account if not in an active tournament
+  useEffect(() => {
+    if (accountType === 'tournament' && !inActiveTournament) {
+      setAccountType('live');
+    }
+  }, [accountType, inActiveTournament, setAccountType]);
+
+  const currentBalanceRaw = () => {
+    if (!user) return 10000;
+    if (accountType === 'demo') return (demoBalance ?? user?.demo_balance ?? 10000);
+    if (accountType === 'tournament') return (tournamentBalance ?? user?.tournament_balance ?? 0);
+    return (liveBalance ?? user?.balance ?? 0);
+  };
+
+  const currentBalanceDisplay = () => {
+    const raw = Number(currentBalanceRaw() ?? 0);
+    // Only convert LIVE account balance; others stay USD
+    if (accountType === 'live') {
+      const converted = Number(convertedBalances.live ?? raw);
+      return formatCurrency(converted, displayCurrency);
+    }
+    return formatCurrency(raw, 'USD');
+  };
+
+  // Convert balances when displayCurrency changes
+  useEffect(() => {
+    const convert = async () => {
+      const rawLive = Number(liveBalance ?? user?.balance ?? 0);
+      // We keep demo/tournament in USD, no conversion needed
+      try {
+        const [resLive] = await Promise.all([
+          fetch('/api/currency/convert', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from_currency: 'USD', to_currency: displayCurrency, amount: rawLive }) }).then(r=>r.json()).catch(()=>({ converted_amount: rawLive })),
+        ]);
+        setConvertedBalances({
+          live: Number(resLive.converted_amount ?? rawLive),
+          demo: null,
+          tournament: null,
+        });
+      } catch {
+        setConvertedBalances({ live: rawLive, demo: null, tournament: null });
+      }
+    };
+    convert();
+  }, [displayCurrency, liveBalance, demoBalance, tournamentBalance, user]);
+
+  const handleChangeDisplayCurrency = async (code) => {
+    const prev = displayCurrency;
+    setDisplayCurrency(code);
+    // Persist to profile if logged-in (server will deduct $0.10 fee when currency actually changes)
+    try {
+      if (user && code !== prev) {
+        const res = await apiCall('/api/users/profile', { method: 'PUT', body: JSON.stringify({ preferred_currency: code }) });
+        // Ask UI to refresh balances
+        window.dispatchEvent(new Event('wallet:balance-updated'));
+      }
+    } catch (e) {
+      alert(e?.message || 'Failed to change currency');
+      // Revert selection on error
+      setDisplayCurrency(prev);
+    }
+  };
+
+  // Ensure header reflects cookie session right away on first load/refresh
+  useEffect(() => {
+    // If user is null but we might have cookie, try hydrate once
+    if (!user) {
+      refreshSession().catch(()=>{});
+    }
+  }, []);
 
   return (
     <header className="w-full max-w-none bg-[#2a3142] flex items-center justify-between px-4 py-3 border-b border-gray-700 shadow-lg flex-shrink-0">
@@ -163,18 +260,59 @@ const Header = ({ setCurrentPage }) => {
           <span className="text-white font-medium">Get a 30% bonus on your first deposit</span>
           <div className="ml-3 bg-green-500 text-white text-xs font-bold rounded px-2 py-1">30%</div>
         </div>
-        <div className="flex items-center space-x-2 bg-[#1a2036] px-3 py-2 rounded-lg border border-gray-600">
-          <i className="fas fa-graduation-cap text-blue-400" />
-          <div>
-            <div className="text-xs text-gray-400 font-medium">
-              {user ? 'LIVE ACCOUNT' : 'DEMO ACCOUNT'}
+        <div className="relative">
+          <button
+            onClick={() => setAcctDropdownOpen((v) => !v)}
+            className="flex items-center space-x-2 bg-[#1a2036] px-3 py-2 rounded-lg border border-gray-600 hover:bg-[#242b46]"
+          >
+            <i className={`fas ${accountType==='demo' ? 'fa-graduation-cap text-blue-400' : accountType==='tournament' ? 'fa-trophy text-purple-400' : 'fa-wallet text-green-400'}`} />
+            <div className="text-left">
+              <div className="text-xs text-gray-400 font-medium">
+                {accountType==='demo' ? 'DEMO ACCOUNT' : accountType==='tournament' ? 'TOURNAMENT' : 'LIVE ACCOUNT'}
+              </div>
+              <div className="text-white font-bold">
+                {currentBalanceDisplay()}
+              </div>
             </div>
-            <div className="text-white font-bold">
-              {user
-                ? `$${Number((liveBalance ?? user?.balance) ?? 0).toFixed(2)}`
-                : '$10,000.00'}
+            <i className="fas fa-chevron-down text-xs text-gray-400"></i>
+          </button>
+          {acctDropdownOpen && (
+            <div className="absolute right-0 mt-2 w-56 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50">
+              <div className="px-4 py-2 text-xs text-gray-400">Switch Account</div>
+              {[{key:'live', label:'Live', icon:'fa-wallet', color:'text-green-400', value:(liveBalance ?? user?.balance ?? 0)},
+                {key:'demo', label:'Demo', icon:'fa-graduation-cap', color:'text-blue-400', value:(demoBalance ?? user?.demo_balance ?? 10000)},
+                ...(inActiveTournament ? [{key:'tournament', label:'Tournament', icon:'fa-trophy', color:'text-purple-400', value:(tournamentBalance ?? user?.tournament_balance ?? 0)}] : [])].map((opt)=> (
+                <button
+                  key={opt.key}
+                  onClick={()=>{ setAccountType(opt.key); setAcctDropdownOpen(false); window.dispatchEvent(new Event('wallet:balance-updated')); }}
+                  className={`flex w-full items-center justify-between px-4 py-2 hover:bg-gray-700 ${accountType===opt.key ? 'bg-gray-700' : ''}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <i className={`fas ${opt.icon} ${opt.color}`}></i>
+                    <span className="text-white text-sm">{opt.label}</span>
+                  </span>
+                  <span className="text-gray-300 text-sm">
+                    {opt.key === 'live'
+                      ? formatCurrency(Number(convertedBalances.live ?? opt.value), displayCurrency)
+                      : formatCurrency(Number(opt.value), 'USD')}
+                  </span>
+                </button>
+              ))}
+              <div className="border-t border-gray-700 mt-1" />
+              <div className="px-4 py-2 text-xs text-gray-400">Live Currency</div>
+              <div className="px-3 pb-3">
+                <select
+                  value={displayCurrency}
+                  onChange={(e)=>handleChangeDisplayCurrency(e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-white"
+                >
+                  {Object.entries(CURRENCIES).map(([code, info]) => (
+                    <option key={code} value={code}>{info.symbol} {code}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
+          )}
         </div>
         <button 
           onClick={handleDepositClick} 

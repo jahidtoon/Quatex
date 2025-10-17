@@ -38,14 +38,14 @@ const SidebarLink = ({ page, currentPage, setCurrentPage, showLabel, extraClasse
       onClick={handleClick}
       href="#"
       title={!showLabel && label ? label : undefined}
-      className={`sidebar-link flex flex-col items-center justify-center ${collapsed ? 'py-2' : 'py-3'} font-semibold transition-colors ${currentPage === page ? 'active' : ''} ${extraClasses}`}
+      className={`sidebar-link flex flex-col items-center justify-center ${collapsed ? 'py-[0.45rem]' : 'py-[0.675rem]'} font-semibold transition-colors ${currentPage === page ? 'active' : ''} ${extraClasses}`}
     >
       <div className="relative flex flex-col items-center">
-        <i className={`fas ${icon} icon text-2xl ${currentPage === page ? 'text-white' : color || 'text-main'}`} />
+        <i className={`fas ${icon} icon text-[1.35rem] ${currentPage === page ? 'text-white' : color || 'text-main'}`} />
         {badge && (
-          <span className="absolute -top-1 -right-2 bg-blue-500 text-white text-xs rounded-full px-1.5 py-0.5 font-bold">{badge}</span>
+          <span className="absolute -top-1 -right-2 bg-blue-500 text-white text-[0.675rem] rounded-full px-1.5 py-0.5 font-bold">{badge}</span>
         )}
-        {showLabel && label && <span className={`mt-1 text-xs font-semibold tracking-tight ${currentPage === page ? 'text-white' : 'text-main'}`}>{label}</span>}
+        {showLabel && label && <span className={`mt-1 text-[0.675rem] font-semibold tracking-tight ${currentPage === page ? 'text-white' : 'text-main'}`}>{label}</span>}
       </div>
     </a>
   );
@@ -91,15 +91,16 @@ const Sidebar = ({ currentPage, setCurrentPage }) => {
     { page: 'deposit' },
     { page: 'withdrawal' },
     { page: 'transactions' },
+    { page: 'account' },
   ];
 
   return (
-  <aside className={`transition-all duration-300 bg-[#1a2036] h-full min-h-0 flex flex-col justify-between items-center py-4 ${expanded ? 'overflow-hidden' : 'overflow-y-hidden'} ${expanded ? 'w-32 md:w-40' : 'w-14'}`}>
+  <aside className={`transition-all duration-300 bg-[#1a2036] h-full min-h-0 flex flex-col justify-between items-center py-4 ${expanded ? 'overflow-hidden' : 'overflow-y-hidden'} ${expanded ? 'w-[7.2rem] md:w-[9rem]' : 'w-[3.15rem]'}`}>
       {/* Hamburger always visible at top */}
       <div className="w-full flex justify-center items-center mb-4 flex-shrink-0">
         <SidebarHamburger isOpen={expanded} onToggle={() => setExpanded((prev) => !prev)} />
       </div>
-      <div className={`flex flex-col items-center gap-3 flex-1 w-full min-h-0 ${expanded ? 'overflow-y-auto' : 'overflow-visible'} transition-all duration-300 ${expanded ? 'px-2' : 'px-0'}`}>
+      <div className={`flex flex-col items-center gap-2.5 flex-1 w-full min-h-0 ${expanded ? 'overflow-y-auto' : 'overflow-visible'} transition-all duration-300 ${expanded ? 'px-[0.45rem]' : 'px-0'}`}>
         {navItems.map(item => (
           <SidebarLink
             key={item.page}
@@ -113,32 +114,32 @@ const Sidebar = ({ currentPage, setCurrentPage }) => {
           />
         ))}
       </div>
-      <div className={`w-full flex flex-col items-center border-t border-gray-700 pt-4 gap-2 transition-all duration-300 flex-shrink-0 ${expanded ? 'px-2' : 'px-0'}`}>
+      <div className={`w-full flex flex-col items-center border-t border-gray-700 pt-3.5 gap-1.5 transition-all duration-300 flex-shrink-0 ${expanded ? 'px-[0.45rem]' : 'px-0'}`}>
         {/* Footer round icon buttons */}
-        <div className={`flex ${expanded ? 'flex-row' : 'flex-col'} items-center justify-center gap-2 mb-2`}>
+        <div className={`flex ${expanded ? 'flex-row' : 'flex-col'} items-center justify-center gap-1.5 mb-1.5`}>
           <button
-            className="w-8 h-8 bg-[#23283a] rounded-full flex items-center justify-center text-gray-300 hover:bg-[#31374a] transition"
+            className="w-[1.8rem] h-[1.8rem] bg-[#23283a] rounded-full flex items-center justify-center text-gray-300 hover:bg-[#31374a] transition"
             title="Fullscreen"
             onClick={handleFullscreen}
           >
             <i className="fas fa-expand-arrows-alt"></i>
           </button>
           <button
-            className="w-8 h-8 bg-[#23283a] rounded-full flex items-center justify-center text-gray-300 hover:bg-[#31374a] transition"
+            className="w-[1.8rem] h-[1.8rem] bg-[#23283a] rounded-full flex items-center justify-center text-gray-300 hover:bg-[#31374a] transition"
             title="Back"
             onClick={handleBack}
           >
             <i className="fas fa-arrow-left"></i>
           </button>
           <button
-            className="w-8 h-8 bg-[#23283a] rounded-full flex items-center justify-center text-gray-300 hover:bg-[#31374a] transition"
+            className="w-[1.8rem] h-[1.8rem] bg-[#23283a] rounded-full flex items-center justify-center text-gray-300 hover:bg-[#31374a] transition"
             title="Settings"
             onClick={() => setCurrentPage('settings')}
           >
             <i className="fas fa-cog"></i>
           </button>
           <button
-            className="w-8 h-8 bg-[#23283a] rounded-full flex items-center justify-center text-gray-300 hover:bg-[#31374a] transition"
+            className="w-[1.8rem] h-[1.8rem] bg-[#23283a] rounded-full flex items-center justify-center text-gray-300 hover:bg-[#31374a] transition"
             title="Sound"
             onClick={handleSound}
           >
@@ -149,14 +150,14 @@ const Sidebar = ({ currentPage, setCurrentPage }) => {
         {expanded ? (
           <button
             onClick={() => setCurrentPage('join-us')}
-            className="w-20 h-8 bg-[#23283a] rounded flex items-center justify-center text-xs text-white font-bold mb-1 border border-[#31374a] hover:bg-[#31374a] transition"
+            className="w-[4.5rem] h-[1.8rem] bg-[#23283a] rounded flex items-center justify-center text-[0.675rem] text-white font-bold mb-1 border border-[#31374a] hover:bg-[#31374a] transition"
           >
-            <i className="fas fa-user-plus text-pink-400 mr-2"></i> JOIN US
+            <i className="fas fa-user-plus text-pink-400 mr-1.5"></i> JOIN US
           </button>
         ) : (
           <button
             onClick={() => setCurrentPage('join-us')}
-            className="w-8 h-8 bg-[#23283a] rounded-full flex items-center justify-center text-pink-400 hover:bg-[#31374a] transition"
+            className="w-[1.8rem] h-[1.8rem] bg-[#23283a] rounded-full flex items-center justify-center text-pink-400 hover:bg-[#31374a] transition"
             title="Join Us"
           >
             <i className="fas fa-user-plus"></i>
@@ -166,14 +167,14 @@ const Sidebar = ({ currentPage, setCurrentPage }) => {
         {expanded ? (
           <button
             onClick={() => setCurrentPage('support')}
-            className="w-20 h-8 bg-green-500 rounded flex items-center justify-center text-xs text-white font-bold mb-1 hover:bg-green-600 transition"
+            className="w-[4.5rem] h-[1.8rem] bg-green-500 rounded flex items-center justify-center text-[0.675rem] text-white font-bold mb-1 hover:bg-green-600 transition"
           >
-            <i className="fas fa-question-circle mr-2"></i> Help
+            <i className="fas fa-question-circle mr-1.5"></i> Help
           </button>
         ) : (
           <button
             onClick={() => setCurrentPage('support')}
-            className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white hover:bg-green-600 transition"
+            className="w-[1.8rem] h-[1.8rem] bg-green-500 rounded-full flex items-center justify-center text-white hover:bg-green-600 transition"
             title="Help"
           >
             <i className="fas fa-question-circle"></i>

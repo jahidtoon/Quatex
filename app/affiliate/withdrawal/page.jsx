@@ -35,75 +35,48 @@ export default function AffiliateWithdrawal() {
       router.push('/affiliate/auth');
       return;
     }
-    loadWithdrawalData();
+    loadWithdrawalData(token);
   }, [router]);
 
-  const loadWithdrawalData = async () => {
+  const loadWithdrawalData = async (token) => {
     try {
       setIsLoading(true);
-      // Mock data for withdrawal
-      const mockData = {
+      const [statsRes, payoutsRes] = await Promise.all([
+        fetch('/api/affiliate/dashboard?type=earnings', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/affiliate/payouts', { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+      const stats = await statsRes.json();
+      const payouts = await payoutsRes.json();
+      const totalPaid = (payouts?.payouts || []).filter(p => (p.status||'').toLowerCase()==='paid')
+                       .reduce((s, p) => s + Number(p.amount||0), 0);
+      const pending = (payouts?.payouts || []).filter(p => (p.status||'').toLowerCase()==='pending')
+                       .reduce((s, p) => s + Number(p.amount||0), 0);
+      const available = Number(stats?.stats?.totalEarnings || 0) - totalPaid - pending;
+      setWithdrawalData({
         success: true,
         balance: {
-          availableBalance: 14420.50,
-          pendingWithdrawals: 1000.00,
-          totalWithdrawn: 25680.00,
-          minimumWithdrawal: 50.00
+          availableBalance: Math.max(available, 0),
+          pendingWithdrawals: pending,
+          totalWithdrawn: totalPaid,
+          minimumWithdrawal: 50
         },
         withdrawalMethods: [
           { id: 'bank_transfer', name: 'Bank Transfer', fee: '2%', processingTime: '3-5 business days', minAmount: 100 },
           { id: 'paypal', name: 'PayPal', fee: '3%', processingTime: '1-2 business days', minAmount: 50 },
-          { id: 'bitcoin', name: 'Bitcoin', fee: '1%', processingTime: '24 hours', minAmount: 50 },
-          { id: 'skrill', name: 'Skrill', fee: '2.5%', processingTime: '1-3 business days', minAmount: 50 }
+          { id: 'bitcoin', name: 'Bitcoin', fee: '1%', processingTime: '24 hours', minAmount: 50 }
         ],
-        withdrawalHistory: [
-          {
-            id: 'WD001',
-            amount: 1500.00,
-            method: 'Bank Transfer',
-            requestDate: '2024-09-01',
-            processedDate: '2024-09-05',
-            status: 'completed',
-            transactionId: 'TXN_WD_001',
-            fee: 30.00,
-            netAmount: 1470.00
-          },
-          {
-            id: 'WD002',
-            amount: 800.00,
-            method: 'PayPal',
-            requestDate: '2024-08-15',
-            processedDate: '2024-08-17',
-            status: 'completed',
-            transactionId: 'TXN_WD_002',
-            fee: 24.00,
-            netAmount: 776.00
-          },
-          {
-            id: 'WD003',
-            amount: 1000.00,
-            method: 'Bitcoin',
-            requestDate: '2024-09-08',
-            processedDate: null,
-            status: 'pending',
-            transactionId: 'TXN_WD_003',
-            fee: 10.00,
-            netAmount: 990.00
-          },
-          {
-            id: 'WD004',
-            amount: 600.00,
-            method: 'Bank Transfer',
-            requestDate: '2024-07-20',
-            processedDate: '2024-07-25',
-            status: 'completed',
-            transactionId: 'TXN_WD_004',
-            fee: 12.00,
-            netAmount: 588.00
-          }
-        ]
-      };
-      setWithdrawalData(mockData);
+        withdrawalHistory: (payouts?.payouts || []).map(p => ({
+          id: p.id,
+          amount: Number(p.amount||0),
+          method: p.method,
+          requestDate: new Date(p.requested_at).toISOString().slice(0,10),
+          processedDate: p.processed_at ? new Date(p.processed_at).toISOString().slice(0,10) : null,
+          status: (p.status||'').toLowerCase() === 'paid' ? 'completed' : (p.status||'').toLowerCase(),
+          transactionId: p.id,
+          fee: 0,
+          netAmount: Number(p.amount||0)
+        }))
+      });
     } catch (error) {
       console.error('Error loading withdrawal data:', error);
     } finally {
@@ -111,7 +84,7 @@ export default function AffiliateWithdrawal() {
     }
   };
 
-  const handleWithdrawalSubmit = () => {
+  const handleWithdrawalSubmit = async () => {
     if (!withdrawalRequest.amount || parseFloat(withdrawalRequest.amount) < withdrawalData.balance.minimumWithdrawal) {
       alert(`Minimum withdrawal amount is $${withdrawalData.balance.minimumWithdrawal}`);
       return;
@@ -122,7 +95,15 @@ export default function AffiliateWithdrawal() {
       return;
     }
 
-    alert('Withdrawal request submitted successfully! You will receive confirmation within 24 hours.');
+    const token = localStorage.getItem('affiliateToken');
+    const res = await fetch('/api/affiliate/payouts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ amount: parseFloat(withdrawalRequest.amount), method: withdrawalRequest.method })
+    });
+    const data = await res.json();
+    if (data?.success) alert('Withdrawal request submitted successfully!');
+    await loadWithdrawalData(token);
     setShowWithdrawForm(false);
     setWithdrawalRequest({
       amount: '',

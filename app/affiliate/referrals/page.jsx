@@ -24,83 +24,15 @@ export default function AffiliateReferrals() {
       router.push('/affiliate/auth');
       return;
     }
-    loadReferralsData();
+    loadReferralsData(token);
   }, [router]);
 
-  const loadReferralsData = async () => {
+  const loadReferralsData = async (token) => {
     try {
       setIsLoading(true);
-      // Mock data for referrals
-      const mockData = {
-        success: true,
-        stats: {
-          totalReferrals: 156,
-          activeReferrals: 142,
-          pendingReferrals: 14,
-          thisMonth: 23,
-          conversionRate: 68.5
-        },
-        referrals: [
-          {
-            id: 'REF001',
-            name: 'John Smith',
-            email: 'john@example.com',
-            phone: '+1234567890',
-            country: 'United States',
-            joinDate: '2024-08-15',
-            lastActivity: '2024-09-08',
-            status: 'Active',
-            totalDeposit: 2500,
-            totalTrades: 45,
-            earnings: 450.00,
-            tier: 'Gold'
-          },
-          {
-            id: 'REF002',
-            name: 'Sarah Johnson',
-            email: 'sarah@example.com',
-            phone: '+1234567891',
-            country: 'Canada',
-            joinDate: '2024-08-20',
-            lastActivity: '2024-09-07',
-            status: 'Active',
-            totalDeposit: 1800,
-            totalTrades: 32,
-            earnings: 337.50,
-            tier: 'Silver'
-          },
-          {
-            id: 'REF003',
-            name: 'Mike Wilson',
-            email: 'mike@example.com',
-            phone: '+1234567892',
-            country: 'United Kingdom',
-            joinDate: '2024-09-01',
-            lastActivity: '2024-09-06',
-            status: 'Pending',
-            totalDeposit: 500,
-            totalTrades: 8,
-            earnings: 200.00,
-            tier: 'Bronze'
-          },
-          {
-            id: 'REF004',
-            name: 'Emma Davis',
-            email: 'emma@example.com',
-            phone: '+1234567893',
-            country: 'Australia',
-            joinDate: '2024-07-10',
-            lastActivity: '2024-09-08',
-            status: 'Active',
-            totalDeposit: 3200,
-            totalTrades: 67,
-            earnings: 680.00,
-            tier: 'Platinum'
-          }
-        ],
-        countries: ['United States', 'Canada', 'United Kingdom', 'Australia', 'Germany', 'France']
-      };
-      setReferralsData(mockData);
+      const res = await fetch('/api/affiliate/referrals', { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      setReferralsData(data);
     } catch (error) {
       console.error('Error loading referrals:', error);
     } finally {

@@ -29,6 +29,24 @@ model currency_pairs {
   @@index([symbol])
 }
 
+model currency_rates {
+  id              String   @id @default(uuid())
+  from_currency   String
+  to_currency     String
+  rate            Decimal
+  min_amount      Decimal  @default(1)
+  max_amount      Decimal  @default(1000000)
+  is_active       Boolean  @default(true)
+  last_updated    DateTime @default(now())
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@unique([from_currency, to_currency])
+  @@index([from_currency])
+  @@index([to_currency])
+  @@index([is_active])
+}
+
 model forex_candles {
   id         String   @id @default(uuid())
   symbol     String
@@ -63,9 +81,11 @@ model users {
   is_admin         Boolean            @default(false)
   is_suspended     Boolean            @default(false)
   avatar_url       String?
+  preferred_currency String?          @default("USD")
   created_at       DateTime           @default(now())
   updated_at       DateTime           @updatedAt
   demo_balance     Decimal?           @default(10000)
+  tournament_balance Decimal?         @default(0)
   chat_messages    chat_messages[]
   deposits         deposits[]
   leaderboard      leaderboard[]
@@ -75,6 +95,11 @@ model users {
   withdrawals      withdrawals[]
   deposit_sessions deposit_sessions[]
   wallet_ledger    wallet_ledger[]
+  // Back-rel for affiliate commissions where this user is the referral
+  affiliate_commissions_referral affiliate_commissions[] @relation("affiliate_commission_referral")
+  // Affiliate backlink (optional): which affiliate referred this user
+  referred_by_affiliate_id String?
+  affiliate_referrals       affiliate_referrals[]
   // P2P back-relations
   p2p_offers             p2p_offers[]
   user_payment_methods   user_payment_methods[]
@@ -84,6 +109,7 @@ model users {
   p2p_disputes_raised    p2p_disputes[]         @relation("p2p_dispute_raised_by")
   p2p_ratings_from       p2p_ratings[]          @relation("p2p_from_user")
   p2p_ratings_to         p2p_ratings[]          @relation("p2p_to_user")
+  tournament_participants tournament_participants[]
 }
 
 model deposits {
@@ -145,15 +171,101 @@ model leaderboard {
   @@index([user_id])
 }
 
+enum TournamentStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum TournamentType {
+  PROFIT_BASED
+  WIN_RATE
+  VOLUME_BASED
+  MIXED
+}
+
 model tournaments {
-  id           String   @id @default(uuid())
-  title        String?
-  prize_pool   Decimal?
-  entry_fee    Decimal?
-  participants Int?
-  duration     String?
-  status       String?
-  created_at   DateTime @default(now())
+  id                  String             @id @default(uuid())
+  title               String
+  description         String?
+  type                TournamentType     @default(PROFIT_BASED)
+  status              TournamentStatus   @default(UPCOMING)
+  entry_fee           Decimal            @default(0)
+  max_participants    Int?
+  start_date          DateTime
+  end_date            DateTime
+  total_prize_pool    Decimal            @default(0)
+  current_participants Int               @default(0)
+  rules               String?
+  banner_url          String?
+  created_at          DateTime           @default(now())
+  updated_at          DateTime           @updatedAt
+  
+  participants        tournament_participants[]
+  prizes              tournament_prizes[]
+  leaderboard         tournament_leaderboard[]
+  
+  @@index([status])
+  @@index([start_date])
+  @@index([end_date])
+}
+
+model tournament_participants {
+  id              String    @id @default(uuid())
+  tournament_id   String
+  user_id         String
+  entry_paid      Decimal   @default(0)
+  joined_at       DateTime  @default(now())
+  starting_balance Decimal  @default(0)
+  current_balance Decimal   @default(0)
+  total_trades    Int       @default(0)
+  winning_trades  Int       @default(0)
+  total_profit    Decimal   @default(0)
+  total_volume    Decimal   @default(0)
+  rank            Int?
+  prize_won       Decimal?  @default(0)
+  is_disqualified Boolean   @default(false)
+  
+  tournament      tournaments @relation(fields: [tournament_id], references: [id], onDelete: Cascade)
+  user            users       @relation(fields: [user_id], references: [id])
+  
+  @@unique([tournament_id, user_id])
+  @@index([tournament_id])
+  @@index([user_id])
+  @@index([rank])
+}
+
+model tournament_prizes {
+  id            String   @id @default(uuid())
+  tournament_id String
+  rank          Int
+  prize_amount  Decimal
+  prize_type    String   @default("CASH") // CASH, BONUS, etc
+  description   String?
+  
+  tournament    tournaments @relation(fields: [tournament_id], references: [id], onDelete: Cascade)
+  
+  @@unique([tournament_id, rank])
+  @@index([tournament_id])
+}
+
+model tournament_leaderboard {
+  id              String   @id @default(uuid())
+  tournament_id   String
+  user_id         String
+  rank            Int
+  total_profit    Decimal  @default(0)
+  total_trades    Int      @default(0)
+  win_rate        Decimal  @default(0)
+  total_volume    Decimal  @default(0)
+  updated_at      DateTime @updatedAt
+  
+  tournament      tournaments @relation(fields: [tournament_id], references: [id], onDelete: Cascade)
+  
+  @@unique([tournament_id, user_id])
+  @@index([tournament_id, rank])
+  @@index([user_id])
 }
 
 model support_messages {
@@ -420,6 +532,8 @@ model p2p_orders {
   paid_at          DateTime?
   released_at      DateTime?
   canceled_at      DateTime?
+  maker_confirmed  Boolean         @default(false)
+  taker_confirmed  Boolean         @default(false)
   created_at       DateTime        @default(now())
   updated_at       DateTime        @updatedAt
 
@@ -487,3 +601,80 @@ model p2p_ratings {
 }
 
 // ------------------ End P2P Trading System Additions -------------------
+
+// -------------------- Affiliate Program Additions --------------------
+
+model affiliates {
+  id              String   @id @default(uuid())
+  name            String
+  email           String   @unique
+  password_hash   String
+  phone           String?
+  country         String?
+  status          String   @default("Active") // Active, Suspended
+  tier            String   @default("Bronze")
+  commission_rate Int      @default(30) // percent
+  referral_code   String   @unique
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  referrals       affiliate_referrals[]
+  commissions     affiliate_commissions[]
+  payouts         affiliate_payouts[]
+}
+
+model affiliate_referrals {
+  id            String   @id @default(uuid())
+  affiliate_id  String
+  user_id       String
+  status        String   @default("Active") // Active, Pending
+  total_deposit Decimal  @default(0)
+  total_trades  Int      @default(0)
+  earnings      Decimal  @default(0)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  affiliate affiliates @relation(fields: [affiliate_id], references: [id])
+  user      users      @relation(fields: [user_id], references: [id])
+
+  @@unique([affiliate_id, user_id])
+  @@index([affiliate_id])
+  @@index([user_id])
+}
+
+model affiliate_commissions {
+  id               String   @id @default(uuid())
+  affiliate_id     String
+  referral_user_id String?
+  type             String   // REFERRAL_DEPOSIT, TRADE_VOLUME, BONUS
+  rate             Int      @default(30)
+  amount           Decimal  @default(0)
+  status           String   @default("pending") // pending, paid
+  description      String?
+  transaction_id   String?
+  created_at       DateTime @default(now())
+
+  affiliate affiliates @relation(fields: [affiliate_id], references: [id])
+  referral  users?     @relation("affiliate_commission_referral", fields: [referral_user_id], references: [id])
+
+  @@index([affiliate_id])
+  @@index([status])
+}
+
+model affiliate_payouts {
+  id           String   @id @default(uuid())
+  affiliate_id String
+  amount       Decimal
+  method       String   // e.g., Bitcoin, USDT, Bank
+  status       String   @default("Pending") // Pending, Approved, Rejected, Paid
+  requested_at DateTime @default(now())
+  processed_at DateTime?
+  note         String?
+
+  affiliate affiliates @relation(fields: [affiliate_id], references: [id])
+
+  @@index([affiliate_id])
+  @@index([status])
+}
+
+// ------------------ End Affiliate Program Additions -------------------

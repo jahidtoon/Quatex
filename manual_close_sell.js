@@ -50,7 +50,9 @@ async function manualCloseTrade() {
     // Update user balance if they won
     const accountType = trade.account_type || 'live';
     const balanceField = accountType === 'demo' ? 'demo_balance' : 'balance';
-    const incrementAmount = new Prisma.Decimal(payout.toFixed(2));
+  // Return stake + profit on win
+  const totalReturn = amount + payout;
+  const incrementAmount = new Prisma.Decimal(totalReturn.toFixed(2));
     
     await prisma.$transaction([
       prisma.trades.update({
@@ -72,7 +74,7 @@ async function manualCloseTrade() {
       })
     ]);
     
-    console.log('Trade closed as WIN with payout:', payout, 'Balance updated');
+    console.log('Trade closed as WIN with payout:', payout, 'Stake returned:', amount, 'Balance incremented by:', totalReturn);
   } else {
     await prisma.trades.update({
       where: { id: trade.id },

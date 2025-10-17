@@ -124,3 +124,11 @@ body { @apply bg-main text-main; }
     background-color: rgba(239, 68, 68, 0.2);
   }
 }
+
+/* Hide lightweight-charts (TradingView) watermark/logo in bottom-left */
+/* The library injects an absolutely-positioned link at bottom-left; we mask it via CSS only */
+.tv-lightweight-charts a { display: none !important; visibility: hidden !important; opacity: 0 !important; }
+.tv-lightweight-charts div[style*="position: absolute"][style*="bottom"][style*="left"] { display: none !important; visibility: hidden !important; opacity: 0 !important; }
+div[class*="tv-lightweight-charts"] a { display: none !important; visibility: hidden !important; opacity: 0 !important; }
+/* Fallback generic selector used by some builds */
+div[style*="position: absolute"][style*="bottom"][style*="left"][style*="pointer-events: none"] { display: none !important; }

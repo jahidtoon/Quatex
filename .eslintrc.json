@@ -1,9 +1,16 @@
 {
+  "root": true,
   "extends": [
+    "next",
     "next/core-web-vitals",
     "next/typescript"
   ],
+  "parserOptions": {
+    "ecmaVersion": 2023,
+    "sourceType": "module"
+  },
   "rules": {
+    "@typescript-eslint/no-require-imports": "off",
     "react/no-unescaped-entities": "off",
     "@typescript-eslint/no-explicit-any": "warn",
     "@typescript-eslint/ban-ts-comment": "warn",
@@ -11,6 +18,12 @@
     "prefer-const": "warn"
   },
   "overrides": [
+    {
+      "files": ["**/*.js"],
+      "rules": {
+        "@typescript-eslint/no-require-imports": "off"
+      }
+    },
     {
       "files": [
         "components/trading-chart/**/*.{ts,tsx}",

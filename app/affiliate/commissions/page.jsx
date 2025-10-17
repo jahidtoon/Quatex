@@ -23,66 +23,15 @@ export default function AffiliateCommissions() {
       router.push('/affiliate/auth');
       return;
     }
-    loadCommissionsData();
+    loadCommissionsData(token);
   }, [router]);
 
-  const loadCommissionsData = async () => {
+  const loadCommissionsData = async (token) => {
     try {
       setIsLoading(true);
-      // Mock data for commissions
-      const mockData = {
-        success: true,
-        stats: {
-          totalCommission: 15420.50,
-          thisMonth: 2340.75,
-          lastMonth: 1890.25,
-          pendingAmount: 1000.00,
-          paidAmount: 14420.50,
-          avgCommissionRate: 45
-        },
-        commissions: [
-          {
-            id: 'C001',
-            referralName: 'John Smith',
-            referralEmail: 'john@example.com',
-            tradeAmount: 1000,
-            commissionRate: 45,
-            commissionAmount: 450,
-            date: '2024-09-08',
-            status: 'paid',
-            transactionId: 'TXN001'
-          },
-          {
-            id: 'C002',
-            referralName: 'Sarah Johnson',
-            referralEmail: 'sarah@example.com',
-            tradeAmount: 750,
-            commissionRate: 45,
-            commissionAmount: 337.50,
-            date: '2024-09-07',
-            status: 'pending',
-            transactionId: 'TXN002'
-          },
-          {
-            id: 'C003',
-            referralName: 'Mike Wilson',
-            referralEmail: 'mike@example.com',
-            tradeAmount: 500,
-            commissionRate: 40,
-            commissionAmount: 200,
-            date: '2024-09-06',
-            status: 'paid',
-            transactionId: 'TXN003'
-          }
-        ],
-        tiers: [
-          { name: 'Bronze', rate: 30, minReferrals: 0, current: false },
-          { name: 'Silver', rate: 35, minReferrals: 51, current: false },
-          { name: 'Gold', rate: 45, minReferrals: 101, current: true },
-          { name: 'Platinum', rate: 60, minReferrals: 201, current: false }
-        ]
-      };
-      setCommissionsData(mockData);
+      const res = await fetch('/api/affiliate/commissions', { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      setCommissionsData(data);
     } catch (error) {
       console.error('Error loading commissions:', error);
     } finally {

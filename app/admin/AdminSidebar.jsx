@@ -15,11 +15,11 @@ export default function AdminSidebar({ className = '', id = 'admin-sidebar', onN
     window.location.href = '/admin/login';
   };
 
-  const linkClass = "block py-2 px-3 rounded hover:bg-[#1d2440]";
+  const linkClass = "block py-[0.45rem] px-[0.675rem] rounded hover:bg-[#1d2440]";
   return (
-  <aside id={id} className={`w-64 bg-[#151a2e] border-r border-[#262b40] p-4 ${className}`}>
+  <aside id={id} className={`w-[14.4rem] bg-[#151a2e] border-r border-[#262b40] p-[0.9rem] ${className}`}>
       <div className="mb-4 flex items-center justify-between">
-        <div className="text-[15px] font-semibold tracking-wide text-gray-200">ADMIN MENU</div>
+        <div className="text-[13.5px] font-semibold tracking-wide text-gray-200">ADMIN MENU</div>
         {/* Desktop hamburger to collapse/expand sidebar (hidden on mobile) */}
         <SidebarHamburger
           isOpen={!!isOpen}
@@ -66,6 +66,7 @@ export default function AdminSidebar({ className = '', id = 'admin-sidebar', onN
         <div>
           <div className="text-xs uppercase tracking-wider text-gray-400 mb-1 px-1">System</div>
       <a className={linkClass} href="/admin/system" onClick={onNavigate}>System</a>
+      <a className={linkClass} href="/admin/currency" onClick={onNavigate}>Currency Management</a>
       <a className={linkClass} href="/admin/risk-management" onClick={onNavigate}>Risk Management</a>
       <a className={linkClass} href="/admin/notifications" onClick={onNavigate}>Notifications</a>
       <a className={linkClass} href="/admin/billing" onClick={onNavigate}>Billing Settings</a>

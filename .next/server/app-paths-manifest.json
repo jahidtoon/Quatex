@@ -1,1 +1,6 @@
-{}
+{
+  "/api/trades/route": "app/api/trades/route.js",
+  "/api/klines/route": "app/api/klines/route.js",
+  "/api/users/stats/route": "app/api/users/stats/route.js",
+  "/api/time/route": "app/api/time/route.js"
+}

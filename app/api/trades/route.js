@@ -77,7 +77,9 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const limitParam = Number(searchParams.get('limit'));
+    const offsetParam = Number(searchParams.get('offset'));
     const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 20;
+    const offset = Number.isFinite(offsetParam) && offsetParam > 0 ? Math.floor(offsetParam) : 0;
     const statusFilter = searchParams.get('status');
     const resultFilter = searchParams.get('result');
 
@@ -99,6 +101,7 @@ export async function GET(request) {
       where: { AND: andConditions },
       orderBy: { open_time: 'desc' },
       take: limit,
+      skip: offset,
     });
 
     return NextResponse.json({
@@ -139,6 +142,8 @@ export async function POST(request) {
     const normalizedAccountType = typeof accountType === 'string'
       ? accountType.trim().toLowerCase()
       : 'live';
+    const isDemo = normalizedAccountType === 'demo';
+    const isTournament = normalizedAccountType === 'tournament';
 
     if (!symbol || typeof symbol !== 'string') {
       return badRequest('Symbol is required');
@@ -183,7 +188,7 @@ export async function POST(request) {
     try {
       userRecord = await prisma.users.findUnique({
         where: { id: userId },
-        select: { balance: true, demo_balance: true, is_suspended: true },
+  select: { balance: true, demo_balance: true, tournament_balance: true, is_suspended: true },
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientValidationError && error.message.includes('demo_balance')) {
@@ -198,7 +203,7 @@ export async function POST(request) {
       if (supportsDemoBalance) {
         userRecord = await prisma.users.findUnique({ where: { id: userId } });
       } else {
-        const fallbackRows = await prisma.$queryRaw`SELECT balance, demo_balance FROM users WHERE id = ${userId} LIMIT 1`;
+  const fallbackRows = await prisma.$queryRaw`SELECT balance, demo_balance, tournament_balance FROM users WHERE id = ${userId} LIMIT 1`;
         userRecord = Array.isArray(fallbackRows) ? fallbackRows[0] : null;
       }
     }
@@ -215,6 +220,11 @@ export async function POST(request) {
     const hasDemoBalance = userRecord && (
       Object.prototype.hasOwnProperty.call(userRecord, 'demo_balance') ||
       Object.prototype.hasOwnProperty.call(userRecord, 'demoBalance')
+    );
+
+    const hasTournamentBalance = userRecord && (
+      Object.prototype.hasOwnProperty.call(userRecord, 'tournament_balance') ||
+      Object.prototype.hasOwnProperty.call(userRecord, 'tournamentBalance')
     );
 
     const supportsAccountType = (() => {
@@ -246,13 +256,14 @@ export async function POST(request) {
       return 0;
     };
 
-    const balanceValue = userRecord.balance ?? 0;
-    const rawDemoBalance = userRecord.demo_balance ?? userRecord.demoBalance ?? null;
+  const balanceValue = userRecord.balance ?? 0;
+  const rawDemoBalance = userRecord.demo_balance ?? userRecord.demoBalance ?? null;
+  const rawTournamentBalance = userRecord.tournament_balance ?? userRecord.tournamentBalance ?? null;
 
     const currentLive = toNumber(balanceValue);
   const currentDemo = hasDemoBalance ? toNumber(rawDemoBalance) : currentLive;
-  const isDemo = normalizedAccountType === 'demo';
-    const currentBalance = isDemo ? currentDemo : currentLive;
+  const currentTournament = hasTournamentBalance ? toNumber(rawTournamentBalance) : currentLive;
+    const currentBalance = isDemo ? currentDemo : isTournament ? currentTournament : currentLive;
     if (currentBalance < numericAmount) {
       return NextResponse.json({ error: 'Insufficient balance' }, { status: 400 });
     }
@@ -266,7 +277,7 @@ export async function POST(request) {
 
     let trade;
     let userBalance;
-    if (isDemo && hasDemoBalance) {
+  if (isDemo && hasDemoBalance) {
       if (supportsDemoBalance) {
         [trade, userBalance] = await prisma.$transaction([
           prisma.trades.create({
@@ -341,7 +352,7 @@ export async function POST(request) {
           direction: normalizedDirection,
           result: 'pending',
           status: 'open',
-          ...(supportsAccountType ? { account_type: isDemo ? 'demo' : 'live' } : {}),
+          ...(supportsAccountType ? { account_type: isDemo ? 'demo' : isTournament ? 'tournament' : 'live' } : {}),
           open_time: openTime,
           close_time: closeTime,
           entry_price: priceDecimal,
@@ -356,12 +367,16 @@ export async function POST(request) {
           ? { balance: updatedBalance }
           : isDemo
             ? { demo_balance: updatedBalance }
-            : { balance: updatedBalance },
+            : isTournament && hasTournamentBalance
+              ? { tournament_balance: updatedBalance }
+              : { balance: updatedBalance },
         select: isDemo && !hasDemoBalance
           ? { balance: true }
           : isDemo
             ? { demo_balance: true }
-            : { balance: true },
+            : isTournament && hasTournamentBalance
+              ? { tournament_balance: true }
+              : { balance: true },
       }),
     ]);
 
@@ -370,7 +385,9 @@ export async function POST(request) {
       trade: serializeTrade(trade),
       balance: isDemo && hasDemoBalance
         ? toNumber(userBalance.demo_balance)
-        : toNumber(userBalance.balance),
+        : isTournament && hasTournamentBalance
+          ? toNumber(userBalance.tournament_balance)
+          : toNumber(userBalance.balance),
     });
   } catch (error) {
     console.error('[trades][POST] error:', error);

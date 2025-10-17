@@ -1,18 +1,21 @@
 "use client";
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import MainAppLayout from '../components/MainAppLayout';
+import P2PHeader from './components/P2PHeader';
 
 export default function P2PPage() {
   const [activeTab, setActiveTab] = useState('buy');
-  const [selectedCrypto, setSelectedCrypto] = useState('USDT');
   const [selectedFiat, setSelectedFiat] = useState('BDT');
-  const [amountFiat, setAmountFiat] = useState(0);
+  const [amountUSD, setAmountUSD] = useState(0);
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [confirmOffer, setConfirmOffer] = useState(null);
+  const [confirmAmount, setConfirmAmount] = useState('');
+  const [confirmNotes, setConfirmNotes] = useState('');
 
-  const cryptos = ['USDT', 'BTC', 'ETH', 'BNB'];
-  const fiats = ['BDT', 'USD', 'EUR', 'GBP', 'JPY'];
+  const fiats = ['BDT', 'EUR', 'GBP', 'JPY'];
   const apiSide = useMemo(() => (activeTab === 'buy' ? 'SELL' : 'BUY'), [activeTab]);
 
   useEffect(() => {
@@ -21,7 +24,7 @@ export default function P2PPage() {
       setLoading(true);
       setError('');
       try {
-        const params = new URLSearchParams({ asset: selectedCrypto, fiat: selectedFiat, side: apiSide, page: '1', pageSize: '20' });
+        const params = new URLSearchParams({ asset: 'USD', fiat: selectedFiat, side: apiSide, page: '1', pageSize: '20' });
         const res = await fetch(`/api/p2p/offers?${params.toString()}`);
         if (!res.ok) throw new Error(`Failed to load offers (${res.status})`);
         const data = await res.json();
@@ -34,7 +37,7 @@ export default function P2PPage() {
     }
     load();
     return () => { abort = true; };
-  }, [selectedCrypto, selectedFiat, apiSide]);
+  }, [selectedFiat, apiSide]);
 
   function getAuthHeader() {
     // Try app token first
@@ -46,51 +49,41 @@ export default function P2PPage() {
     return { Authorization: 'Bearer DEVUSER:demo@example.com' };
   }
 
-  async function createOrder(offer, usingFiatAmount) {
+  const openConfirm = (offer) => {
+    setConfirmOffer(offer);
+    setConfirmAmount(amountUSD ? String(amountUSD) : '');
+    setConfirmNotes('I will follow the payment terms and complete within the time limit.');
+  };
+
+  const submitConfirm = async () => {
+    if (!confirmOffer) return;
+    const amt = Number(confirmAmount);
+    if (!amt || amt <= 0) { alert('Amount required'); return; }
     try {
-      if (!usingFiatAmount || usingFiatAmount <= 0) {
-        alert('Please enter a valid fiat amount');
-        return;
-      }
       const res = await fetch('/api/p2p/orders', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeader(),
-        },
-        body: JSON.stringify({ offer_id: offer.id, amount_fiat: Number(usingFiatAmount) }),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify({ offer_id: confirmOffer.id, amount_usd: amt, note: confirmNotes }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to create order');
-      alert(`Order created: ${data.order?.reference_code || data.order?.id}`);
-    } catch (e) {
-      alert(e.message);
-    }
-  }
+      setConfirmOffer(null);
+      setConfirmAmount('');
+      setConfirmNotes('');
+      // Redirect to order chat page
+      if (typeof window !== 'undefined' && data.order?.id) {
+        window.location.href = `/p2p/order/${data.order.id}`;
+      }
+    } catch (e) { alert(e.message); }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <div className="bg-gray-800 border-b border-gray-700 p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Link href="/" className="text-blue-400 hover:text-blue-300">
-              <i className="fas fa-arrow-left"></i> Back to Home
-            </Link>
-            <h1 className="text-3xl font-bold flex items-center">
-              <i className="fas fa-exchange-alt text-indigo-400 mr-3"></i>
-              P2P Trading
-            </h1>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Link href="/p2p/post" className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg">
-              <i className="fas fa-plus mr-2"></i>Post Ad
-            </Link>
-            <Link href="/p2p/orders" className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg">
-              <i className="fas fa-history mr-2"></i>My Orders
-            </Link>
-          </div>
-        </div>
-      </div>
+    <MainAppLayout currentPage="p2p">
+      <div className="min-h-screen bg-gray-900 text-white">
+        <P2PHeader 
+          title="P2P Trading" 
+          currentPath="/p2p"
+        />
 
       <div className="p-6">
         {/* Stats */}
@@ -125,7 +118,7 @@ export default function P2PPage() {
               }`}
             >
               <i className="fas fa-shopping-cart mr-2"></i>
-              Buy Crypto
+              Buy USD
             </button>
             <button
               onClick={() => setActiveTab('sell')}
@@ -136,7 +129,7 @@ export default function P2PPage() {
               }`}
             >
               <i className="fas fa-hand-holding-usd mr-2"></i>
-              Sell Crypto
+              Sell USD
             </button>
           </div>
 
@@ -144,16 +137,11 @@ export default function P2PPage() {
           <div className="p-6 border-b border-gray-700">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Cryptocurrency</label>
-                <select
-                  value={selectedCrypto}
-                  onChange={(e) => setSelectedCrypto(e.target.value)}
-                  className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  {cryptos.map(crypto => (
-                    <option key={crypto} value={crypto}>{crypto}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium mb-2">Trading Asset</label>
+                <div className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white flex items-center justify-center">
+                  <i className="fas fa-dollar-sign text-green-400 mr-2"></i>
+                  <span className="font-semibold">USD</span>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-2">Fiat Currency</label>
@@ -168,12 +156,12 @@ export default function P2PPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Amount</label>
+                <label className="block text-sm font-medium mb-2">Amount (USD)</label>
                 <input
                   type="number"
-                  value={amountFiat}
-                  onChange={(e) => setAmountFiat(parseFloat(e.target.value) || 0)}
-                  placeholder="Enter amount (fiat)"
+                  value={amountUSD}
+                  onChange={(e) => setAmountUSD(parseFloat(e.target.value) || 0)}
+                  placeholder="Enter USD amount"
                   className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
@@ -198,7 +186,7 @@ export default function P2PPage() {
               <div className="p-6 text-red-400">{error}</div>
             )}
             {!loading && !error && offers.length === 0 && (
-              <div className="p-6 text-gray-400">No offers found for {selectedCrypto}/{selectedFiat} ({apiSide}).</div>
+              <div className="p-6 text-gray-400">No offers found for USD/{selectedFiat} ({apiSide}).</div>
             )}
             {offers.map((offer) => (
               <div key={offer.id} className="p-6 hover:bg-gray-700/30 transition-colors">
@@ -217,7 +205,7 @@ export default function P2PPage() {
 
                   <div className="text-center">
                     <div className="text-xl font-bold">{Number(offer.fixed_price || offer.price).toLocaleString()} {selectedFiat}</div>
-                    <div className="text-sm text-gray-400">per {selectedCrypto}</div>
+                    <div className="text-sm text-gray-400">per USD</div>
                   </div>
 
                   <div className="text-center">
@@ -225,7 +213,7 @@ export default function P2PPage() {
                       {(offer.min_limit_fiat || 0).toLocaleString()} - {(offer.max_limit_fiat || 0).toLocaleString()} {selectedFiat}
                     </div>
                     <div className="text-sm text-gray-400">
-                      Limits (asset): {(offer.min_amount_asset || 0)} - {(offer.max_amount_asset || 0)} {selectedCrypto}
+                      Limits: {(offer.min_amount_asset || 0)} - {(offer.max_amount_asset || 0)} USD
                     </div>
                   </div>
 
@@ -235,9 +223,9 @@ export default function P2PPage() {
                         ? 'bg-green-600 hover:bg-green-700 text-white'
                         : 'bg-red-600 hover:bg-red-700 text-white'
                     }`}
-                    onClick={() => createOrder(offer, amountFiat)}
+                    onClick={() => openConfirm(offer)}
                   >
-                    {activeTab === 'buy' ? 'Buy' : 'Sell'} {selectedCrypto}
+                    {activeTab === 'buy' ? 'Buy' : 'Sell'} USD
                   </button>
                 </div>
               </div>
@@ -271,8 +259,40 @@ export default function P2PPage() {
               <p className="text-gray-400">Funds are held in escrow until completion</p>
             </div>
           </div>
+          </div>
+        {/* Confirm Modal */}
+        {confirmOffer && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+            <div className="bg-gray-800 border border-gray-700 rounded-lg w-full max-w-lg">
+              <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+                <h3 className="text-xl font-semibold">Confirm {activeTab === 'buy' ? 'Purchase' : 'Sale'}</h3>
+                <button onClick={()=>setConfirmOffer(null)} className="text-gray-400 hover:text-white"><i className="fas fa-times"/></button>
+              </div>
+              <div className="p-4 space-y-4">
+                <div className="text-sm text-gray-300">Offer: <span className="font-semibold">{confirmOffer.side} USD · {confirmOffer.fiat_currency}</span></div>
+                <div>
+                  <label className="block text-sm mb-1">Amount (USD)</label>
+                  <input type="number" className="w-full p-3 bg-gray-700 border border-gray-600 rounded" value={confirmAmount} onChange={e=>setConfirmAmount(e.target.value)} placeholder="Enter USD amount" />
+                </div>
+                <div className="text-xs text-gray-400 space-y-1 bg-gray-700/40 border border-gray-600 rounded p-3">
+                  <div>• Make sure to pay only through the seller's provided method.</div>
+                  <div>• Payment proof may be required. Do not mark as paid unless completed.</div>
+                  <div>• Orders may be canceled if inactive for a long time.</div>
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">Note (optional)</label>
+                  <textarea className="w-full p-3 bg-gray-700 border border-gray-600 rounded" rows={3} value={confirmNotes} onChange={e=>setConfirmNotes(e.target.value)} />
+                </div>
+              </div>
+              <div className="p-4 border-t border-gray-700 flex items-center justify-end gap-2">
+                <button onClick={()=>setConfirmOffer(null)} className="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded">Cancel</button>
+                <button onClick={submitConfirm} className={`px-4 py-2 rounded ${activeTab==='buy'?'bg-green-600 hover:bg-green-700':'bg-red-600 hover:bg-red-700'}`}>Confirm</button>
+              </div>
+            </div>
+          </div>
+        )}
         </div>
       </div>
-    </div>
+    </MainAppLayout>
   );
 }

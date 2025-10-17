@@ -1,6 +1,8 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import MainAppLayout from '../../components/MainAppLayout';
+import P2PHeader from '../components/P2PHeader';
 
 function getAuthHeader() {
   if (typeof window !== 'undefined') {
@@ -68,16 +70,17 @@ export default function PaymentMethodsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <div className="bg-gray-800 border-b border-gray-700 p-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/p2p" className="text-blue-400 hover:text-blue-300"><i className="fas fa-arrow-left" /> Back to P2P</Link>
-            <h1 className="text-2xl font-bold">Payment Methods</h1>
-          </div>
-          <Link href="/p2p/post" className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded">Post Ad</Link>
-        </div>
-      </div>
+    <MainAppLayout currentPage="p2p">
+      <div className="min-h-screen bg-gray-900 text-white">
+        <P2PHeader 
+          title="Payment Methods" 
+          currentPath="/p2p/payment-methods"
+          rightContent={
+            <Link href="/p2p/post" className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded">
+              Post Ad
+            </Link>
+          }
+        />
 
       <div className="p-6 max-w-5xl mx-auto">
         {error && <div className="mb-4 p-3 rounded bg-red-900/40 border border-red-700 text-red-300">{error}</div>}
@@ -130,6 +133,7 @@ export default function PaymentMethodsPage() {
         </div>
 
       </div>
-    </div>
+      </div>
+    </MainAppLayout>
   );
 }

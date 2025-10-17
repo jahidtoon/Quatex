@@ -3,14 +3,38 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth, useApi } from '@/lib/hooks';
 import MainAppLayout from '../components/MainAppLayout';
+import { formatCurrency, getCurrencySymbol, CURRENCIES, convertCurrency } from '@/lib/currency';
 
 export default function AccountPage() {
   const { user, token, isAuthenticated, updateUser } = useAuth();
   const { apiCall } = useApi();
+
+  // Currency state
+  const [userCurrency, setUserCurrency] = useState('USD');
+  const [convertedBalance, setConvertedBalance] = useState(0);
+  const [currencyLoading, setCurrencyLoading] = useState(false);
+
+  // Consistent currency formatting (2 decimals) across Account page
+  const formatCurrencyDisplay = (value, currency = userCurrency) => {
+    const n = Number(value || 0);
+    if (!Number.isFinite(n)) return `${getCurrencySymbol(currency)}0.00`;
+    return formatCurrency(n, currency);
+  };
   
   const [activeTab, setActiveTab] = useState('profile');
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+
+  // Handle URL tab parameter
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tabParam = urlParams.get('tab');
+      if (tabParam && ['profile', 'security', 'activity', 'billing', 'verification', 'preferences'].includes(tabParam)) {
+        setActiveTab(tabParam);
+      }
+    }
+  }, []);
   const [profileData, setProfileData] = useState({
     firstName: '',
     lastName: '',
@@ -56,6 +80,55 @@ export default function AccountPage() {
       loadStatsData();
     }
   }, [isAuthenticated, token]);
+
+  // Load user's preferred currency
+  useEffect(() => {
+    if (user?.preferred_currency) {
+      setUserCurrency(user.preferred_currency);
+    }
+  }, [user]);
+
+  // Convert balance when currency changes
+  useEffect(() => {
+    if (accountStats.currentBalance && userCurrency !== 'USD') {
+      convertBalance();
+    } else {
+      setConvertedBalance(accountStats.currentBalance || 0);
+    }
+  }, [userCurrency, accountStats.currentBalance]);
+
+  const convertBalance = async () => {
+    if (userCurrency === 'USD') {
+      setConvertedBalance(accountStats.currentBalance || 0);
+      return;
+    }
+
+    setCurrencyLoading(true);
+    try {
+      const conversion = await convertCurrency(accountStats.currentBalance || 0, 'USD', userCurrency);
+      setConvertedBalance(conversion.convertedAmount);
+    } catch (error) {
+      console.error('Failed to convert balance:', error);
+      setConvertedBalance(accountStats.currentBalance || 0);
+    } finally {
+      setCurrencyLoading(false);
+    }
+  };
+
+  const handleCurrencyChange = async (newCurrency) => {
+    setUserCurrency(newCurrency);
+
+    // Update user's preferred currency in database
+    try {
+      await apiCall('/api/users/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ preferred_currency: newCurrency })
+      });
+      updateUser({ ...user, preferred_currency: newCurrency });
+    } catch (error) {
+      console.error('Failed to update preferred currency:', error);
+    }
+  };
 
   const loadProfileData = async () => {
     try {
@@ -206,6 +279,8 @@ export default function AccountPage() {
     }
   };
 
+  //
+
   return (
     <MainAppLayout>
       <div className="bg-gray-900 text-white">
@@ -220,8 +295,32 @@ export default function AccountPage() {
           </div>
           <div className="flex items-center space-x-4">
             <div className="text-right">
-              <div className="text-sm text-gray-400">Account Balance</div>
-              <div className="text-xl font-bold text-green-400">${accountStats.currentBalance.toLocaleString()}</div>
+              <div className="flex items-center space-x-2 mb-1">
+                <span className="text-sm text-gray-400">Account Balance</span>
+                <select
+                  value={userCurrency}
+                  onChange={(e) => handleCurrencyChange(e.target.value)}
+                  className="text-xs bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  {Object.entries(CURRENCIES).map(([code, info]) => (
+                    <option key={code} value={code}>
+                      {info.symbol} {code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-xl font-bold text-green-400">
+                {currencyLoading ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-400 inline-block"></div>
+                ) : (
+                  formatCurrencyDisplay(convertedBalance)
+                )}
+              </div>
+              {userCurrency !== 'USD' && (
+                <div className="text-xs text-gray-500">
+                  ≈ {formatCurrency(accountStats.currentBalance, 'USD')}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -261,7 +360,10 @@ export default function AccountPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">P&L:</span>
-                <span className="text-green-400">+${accountStats.profitLoss}</span>
+                <span className={Number(accountStats.profitLoss) >= 0 ? 'text-green-400' : 'text-red-400'}>
+                  {Number(accountStats.profitLoss) >= 0 ? '+' : '-'}
+                  {formatCurrency(Math.abs(Number(accountStats.profitLoss) || 0), 'USD', { showSymbol: false }).replace('$','')}
+                </span>
               </div>
             </div>
           </div>
@@ -586,20 +688,31 @@ function BillingTab() {
   const [fieldValues, setFieldValues] = useState({});
   const [saving, setSaving] = useState(false);
   const [infoMessage, setInfoMessage] = useState('');
+  const [walletEntries, setWalletEntries] = useState([]);
+  const [walletBalances, setWalletBalances] = useState({});
+  const settledHoldIds = new Set(
+    (walletEntries || [])
+      .filter(e => e.type === 'P2P_ESCROW_RELEASE' && e.meta && e.meta.offset_original_escrow_id)
+      .map(e => e.meta.offset_original_escrow_id)
+  );
 
   const loadAll = async () => {
     try {
       setLoading(true);
       if (!token) return; // wait for auth token
-      const [pmRes, tplRes] = await Promise.all([
+      const [pmRes, tplRes, walletRes] = await Promise.all([
         fetch('/api/p2p/payment-methods', { headers: { Authorization: `Bearer ${token}` } }),
         fetch('/api/payment-method-templates', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch('/api/users/wallet', { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       const pm = await pmRes.json();
       const tp = await tplRes.json();
+      const wl = await walletRes.json();
       setMethods(pm.methods || []);
       setTemplates(tp.templates || []);
       setInfoMessage(tp.message || '');
+      setWalletEntries(wl.entries || []);
+      setWalletBalances(wl.balances || {});
     } catch (e) {
       console.error(e);
     } finally {
@@ -658,6 +771,13 @@ function BillingTab() {
 
   return (
     <div className="space-y-6">
+      {/* Quick Wallet Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+          <div className="text-sm text-gray-400">USD Balance</div>
+          <div className="text-2xl font-semibold text-green-400">${Number(walletBalances.USD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        </div>
+      </div>
       <div className="bg-gray-800 rounded-lg border border-gray-700">
         <div className="p-6 border-b border-gray-700">
           <h2 className="text-2xl font-semibold">Billing Methods</h2>
@@ -722,6 +842,40 @@ function BillingTab() {
                   )}
                 </form>
               </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Wallet Activity */}
+      <div className="bg-gray-800 rounded-lg border border-gray-700">
+        <div className="p-6 border-b border-gray-700">
+          <h2 className="text-2xl font-semibold">Wallet Activity</h2>
+          <p className="text-gray-400">Deposits, P2P holds/releases, withdrawals</p>
+        </div>
+        <div className="p-6">
+          {loading ? (
+            <div className="text-gray-400">Loading...</div>
+          ) : (
+            <div className="space-y-3">
+              {walletEntries.map((e) => {
+                const isHold = e.type === 'P2P_ESCROW_HOLD';
+                const isSettled = isHold && settledHoldIds.has(e.id);
+                return (
+                  <div key={e.id} className={`flex items-center justify-between p-3 rounded ${isSettled ? 'bg-gray-700/60 border border-gray-600' : 'bg-gray-700'}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs px-2 py-1 rounded ${e.type.includes('DEPOSIT') || e.type.includes('RELEASE') ? 'bg-green-900/40 text-green-300' : e.type.includes('WITHDRAWAL') || e.type.includes('HOLD') ? 'bg-yellow-900/40 text-yellow-300' : 'bg-gray-600 text-gray-200'}`}>{e.type}</span>
+                      <span className="text-gray-300">{e.asset}</span>
+                      {isSettled && <span className="text-[10px] uppercase tracking-wide bg-gray-600 text-gray-200 px-2 py-0.5 rounded">Settled</span>}
+                    </div>
+                    <div className={`font-semibold ${Number(e.amount) >= 0 ? 'text-green-400' : 'text-red-400'}`}>{Number(e.amount).toLocaleString()}</div>
+                    <div className="text-sm text-gray-400">{new Date(e.created_at).toLocaleString()}</div>
+                  </div>
+                );
+              })}
+              {!walletEntries.length && (
+                <div className="text-gray-400">No activity yet.</div>
+              )}
             </div>
           )}
         </div>

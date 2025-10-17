@@ -1,49 +1,30 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import prisma from '@/lib/prisma';
 
-// Mock database for demo
-const affiliates = [
-  {
-    id: 'AFF001',
-    name: 'Demo Affiliate',
-    email: 'affiliate@quatex.com',
-    password: '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj76pqKpWVWG', // affiliate123
-    phone: '+1234567890',
-    country: 'BD',
-    status: 'Active',
-    tier: 'Gold',
-    joinDate: '2024-01-15',
-    referralCode: 'AFF001',
-    totalReferrals: 156,
-    activeReferrals: 89,
-    totalEarnings: 15420.50,
-    pendingPayments: 890.00
-  },
-  {
-    id: 'AFF002',
-    name: 'Demo Affiliate',
-    email: 'demo@affiliate.com',
-    password: '$2b$10$PXW0DKax6.qlysf6rmWhIuWvfbZNZnlOfzG2MXiwqyIjRLjfsJbbK', // demo123
-    phone: '+1234567890',
-    country: 'BD',
-    status: 'Active',
-    tier: 'Gold',
-    joinDate: '2024-01-15',
-    referralCode: 'DEMO001',
-    totalReferrals: 156,
-    activeReferrals: 142,
-    totalEarnings: 15420.50,
-    pendingPayments: 1000.00
-  }
-];
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
   try {
     const { email, password } = await request.json();
 
-    // Find affiliate by email
-    const affiliate = affiliates.find(aff => aff.email === email);
+    // Find affiliate by email in DB
+    let affiliate;
+    try {
+      affiliate = await prisma.affiliates.findUnique({ where: { email } });
+    } catch (e) {
+      // If table missing (migration not run)
+      if (e && e.code === 'P2021') {
+        return NextResponse.json(
+          { error: 'Database not migrated (affiliates table missing). Please run: npm run prisma:migrate && npm run prisma:seed' },
+          { status: 500 }
+        );
+      }
+      console.error('Affiliate login DB error:', e);
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
     if (!affiliate) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
@@ -52,7 +33,7 @@ export async function POST(request) {
     }
 
     // Check password
-    const isPasswordValid = await bcrypt.compare(password, affiliate.password);
+  const isPasswordValid = await bcrypt.compare(password || '', affiliate.password_hash || '');
     if (!isPasswordValid) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
@@ -79,8 +60,18 @@ export async function POST(request) {
       { expiresIn: '7d' }
     );
 
-    // Remove password from response
-    const { password: _, ...affiliateData } = affiliate;
+    // Data for response
+    const affiliateData = {
+      id: affiliate.id,
+      name: affiliate.name,
+      email: affiliate.email,
+      phone: affiliate.phone,
+      country: affiliate.country,
+      status: affiliate.status,
+      tier: affiliate.tier,
+      referralCode: affiliate.referral_code,
+      commissionRate: affiliate.commission_rate
+    };
 
     return NextResponse.json({
       message: 'Login successful',
@@ -89,7 +80,7 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('Login error:', error && (error.stack || error.message || error));
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

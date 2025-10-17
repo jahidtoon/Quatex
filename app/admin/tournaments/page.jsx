@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import AdminPageHeader from '../components/AdminPageHeader';
 import Card from '../components/Card';
 import StatCard from '../components/StatCard';
@@ -37,6 +38,7 @@ const formatTimestamp = (value) => {
 };
 
 export default function TournamentsPage() {
+  const router = useRouter();
   const [tournaments, setTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -46,10 +48,13 @@ export default function TournamentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/admin/tournaments', { cache: 'no-store' });
+      const response = await fetch('/api/admin/tournaments', { 
+        cache: 'no-store',
+        credentials: 'include'
+      });
       if (!response.ok) throw new Error(`Failed to load tournaments (${response.status})`);
       const payload = await response.json();
-      setTournaments(payload.items || payload);
+      setTournaments(Array.isArray(payload.tournaments) ? payload.tournaments : payload.items || []);
     } catch (err) {
       setError(err.message || 'Unable to load tournaments');
     } finally {
@@ -62,7 +67,7 @@ export default function TournamentsPage() {
   }, [fetchTournaments]);
 
   const stats = useMemo(() => {
-    if (tournaments.length === 0) {
+    if (!Array.isArray(tournaments) || tournaments.length === 0) {
       return {
         total: 0,
         active: 0,
@@ -71,8 +76,8 @@ export default function TournamentsPage() {
       };
     }
     const active = tournaments.filter((t) => (t.status || '').toLowerCase().includes('active')).length;
-    const participants = tournaments.reduce((sum, t) => sum + (t.participants || 0), 0);
-    const prizePool = tournaments.reduce((sum, t) => sum + (t.prize_pool || 0), 0);
+    const participants = tournaments.reduce((sum, t) => sum + (t._count?.participants || t.current_participants || 0), 0);
+    const prizePool = tournaments.reduce((sum, t) => sum + Number(t.total_prize_pool || 0), 0);
     return {
       total: tournaments.length,
       active,
@@ -82,14 +87,15 @@ export default function TournamentsPage() {
   }, [tournaments]);
 
   const statusOptions = useMemo(() => {
+    if (!Array.isArray(tournaments)) return ['all'];
     const uniqueStatuses = new Set(tournaments.map((t) => statusLabel(t.status).toLowerCase()));
     return ['all', ...Array.from(uniqueStatuses).filter(Boolean)];
   }, [tournaments]);
 
-  const filteredTournaments = tournaments.filter((t) => {
+  const filteredTournaments = Array.isArray(tournaments) ? tournaments.filter((t) => {
     if (selectedStatus === 'all') return true;
     return statusLabel(t.status).toLowerCase() === selectedStatus;
-  });
+  }) : [];
 
   return (
     <div>
@@ -97,7 +103,10 @@ export default function TournamentsPage() {
         title="Trading Tournaments"
         subtitle="Manage trading competitions and challenges"
         actions={
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+          <button 
+            onClick={() => router.push('/admin/tournaments/create')}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
             + Create Tournament
           </button>
         }
@@ -169,15 +178,23 @@ export default function TournamentsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                   <div>
                     <div className="text-xs text-gray-400 uppercase tracking-wider">Duration</div>
-                    <div className="font-medium">{tournament.duration || '—'}</div>
+                    <div className="font-medium">
+                      {tournament.start_date && tournament.end_date 
+                        ? `${new Date(tournament.start_date).toLocaleDateString()} - ${new Date(tournament.end_date).toLocaleDateString()}`
+                        : '—'
+                      }
+                    </div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-400 uppercase tracking-wider">Participants</div>
-                    <div className="font-medium text-blue-400">{formatNumber(tournament.participants)}</div>
+                    <div className="font-medium text-blue-400">
+                      {formatNumber(tournament._count?.participants || tournament.current_participants || 0)}
+                      {tournament.max_participants ? `/${tournament.max_participants}` : ''}
+                    </div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-400 uppercase tracking-wider">Prize Pool</div>
-                    <div className="font-medium text-green-400">{formatCurrency(tournament.prize_pool)}</div>
+                    <div className="font-medium text-green-400">{formatCurrency(tournament.total_prize_pool)}</div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-400 uppercase tracking-wider">Entry Fee</div>

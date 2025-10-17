@@ -1,47 +1,57 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import jwt from 'jsonwebtoken';
+import { verifyToken } from '@/lib/auth';
 
 // Get user profile
 export async function GET(request) {
   try {
-    // Get token from Authorization header
+    // Get token from Authorization header or auth_token cookie
+    let token = null;
     const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    } else {
+      token = request.cookies?.get?.('auth_token')?.value || (request.headers.get('cookie')||'').split(';').map(c=>c.trim()).find(c=>c.startsWith('auth_token='))?.split('=')[1] || null;
+      if (!token) {
+        return NextResponse.json(
+          { error: 'Authentication required' },
+          { status: 401 }
+        );
+      }
     }
-
-    const token = authHeader.split(' ')[1];
-    const JWT_SECRET = process.env.JWT_SECRET || 'dev_change_me_please';
     
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      const userId = decoded.sub;
+      const authUser = await verifyToken(token);
+      if (!authUser) {
+        return NextResponse.json(
+          { error: 'Invalid token' },
+          { status: 401 }
+        );
+      }
+      const userId = authUser.id;
 
-      // Get user profile
+      // Get user profile with compatibility for clients missing tournament_balance
+      const supportsTournament = (() => {
+        try { return Boolean(prisma.users?.fields?.tournament_balance); } catch { return false; }
+      })();
+      const selectBase = {
+        id: true,
+        email: true,
+        first_name: true,
+        last_name: true,
+        name: true,
+        country: true,
+        is_verified: true,
+        avatar_url: true,
+        preferred_currency: true,
+        created_at: true,
+        updated_at: true,
+        balance: true,
+        demo_balance: true,
+      };
       const user = await prisma.users.findUnique({
         where: { id: userId },
-        select: {
-          id: true,
-          email: true,
-          first_name: true,
-          last_name: true,
-          phone: true,
-          country: true,
-          date_of_birth: true,
-          address: true,
-          city: true,
-          postal_code: true,
-          balance: true,
-          demo_balance: true,
-          is_verified: true,
-          avatar_url: true,
-          created_at: true,
-          updated_at: true
-        }
+        select: supportsTournament ? { ...selectBase, tournament_balance: true } : selectBase,
       });
 
       if (!user) {
@@ -54,7 +64,8 @@ export async function GET(request) {
       const sanitized = {
         ...user,
         balance: Number(user.balance || 0),
-        demo_balance: Number(user.demo_balance || 0)
+        demo_balance: Number(user.demo_balance || 0),
+        tournament_balance: Number(user?.tournament_balance || 0)
       };
 
       return NextResponse.json({
@@ -81,21 +92,30 @@ export async function GET(request) {
 // Update user profile
 export async function PUT(request) {
   try {
-    // Get token from Authorization header
+    // Get token from Authorization header or auth_token cookie
+    let token = null;
     const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    } else {
+      token = request.cookies?.get?.('auth_token')?.value || (request.headers.get('cookie')||'').split(';').map(c=>c.trim()).find(c=>c.startsWith('auth_token='))?.split('=')[1] || null;
+      if (!token) {
+        return NextResponse.json(
+          { error: 'Authentication required' },
+          { status: 401 }
+        );
+      }
     }
-
-    const token = authHeader.split(' ')[1];
-    const JWT_SECRET = process.env.JWT_SECRET || 'dev_change_me_please';
     
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      const userId = decoded.sub;
+      const authUser = await verifyToken(token);
+      if (!authUser) {
+        return NextResponse.json(
+          { error: 'Invalid token' },
+          { status: 401 }
+        );
+      }
+      const userId = authUser.id;
 
       const body = await request.json();
       const {
@@ -106,10 +126,14 @@ export async function PUT(request) {
         date_of_birth,
         address,
         city,
-        postal_code
+        postal_code,
+        preferred_currency
       } = body;
 
       // Update user profile
+      const supportsTournament2 = (() => {
+        try { return Boolean(prisma.users?.fields?.tournament_balance); } catch { return false; }
+      })();
       const updatedUser = await prisma.users.update({
         where: { id: userId },
         data: {
@@ -121,6 +145,7 @@ export async function PUT(request) {
           address,
           city,
           postal_code,
+          preferred_currency,
           updated_at: new Date()
         },
         select: {
@@ -128,17 +153,16 @@ export async function PUT(request) {
           email: true,
           first_name: true,
           last_name: true,
-          phone: true,
+          name: true,
           country: true,
-          date_of_birth: true,
-          address: true,
-          city: true,
-          postal_code: true,
-          balance: true,
-          demo_balance: true,
           is_verified: true,
           avatar_url: true,
-          updated_at: true
+          preferred_currency: true,
+          created_at: true,
+          updated_at: true,
+          balance: true,
+          demo_balance: true,
+          ...(supportsTournament2 ? { tournament_balance: true } : {}),
         }
       });
 
@@ -147,7 +171,8 @@ export async function PUT(request) {
         user: {
           ...updatedUser,
           balance: Number(updatedUser.balance || 0),
-          demo_balance: Number(updatedUser.demo_balance || 0)
+          demo_balance: Number(updatedUser.demo_balance || 0),
+          tournament_balance: Number(updatedUser.tournament_balance || 0)
         },
         message: 'Profile updated successfully'
       });
