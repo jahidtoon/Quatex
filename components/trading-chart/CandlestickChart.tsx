@@ -14,6 +14,9 @@ import { createBaselineSeries } from './chartTypes/baseline';
 import { createHollowSeries } from './chartTypes/hollow';
 import { createHeikinSeries } from './chartTypes/heikin';
 import IndicatorsPanel from './IndicatorsPanel';
+import { getBucketSeconds, Tf } from './utils/timeframe';
+import { coordinateToTimeSafe as coordToTimeSafe } from './utils/coordinates';
+import { ensureFutureWhitespace as ensureFutureWhitespaceUtil } from './utils/futureSpace';
 import { IndicatorKey } from './indicators/types';
 import { useIndicators } from './indicators/useIndicators';
 import { useTradeLines } from './useTradeLines';
@@ -69,7 +72,7 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
   const countdownPosRef = useRef<{x:number;y:number}|null>(null);
   const [countdownPos, setCountdownPos] = useState<{x:number;y:number}|null>(null);
   
-  const tfRef = useRef<'5s' | '10s' | '15s' | '30s' | '1m' | '5m' | '15m' | '1h' | '4h' | '1d'>('5s');
+  const tfRef = useRef<Tf>('5s');
   const lastCandlesRef = useRef<Candle[]>([]);
   // Keep last candle time to drive zoom window
   const lastTimeRef = useRef<number | null>(null);
@@ -109,7 +112,7 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
     const x = clientX - rect.left;
     const y = clientY - rect.top;
     const ts = chart.timeScale();
-    const t = coordinateToTimeSafe(ts, x);
+    const t = coordToTimeSafe(ts, x, containerRef.current, lastTimeRef.current);
     // If user drags far into the future, extend the spacer horizon dynamically
     try {
       const tNum = Number(t as any);
@@ -290,25 +293,7 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
   }, [updateDragFromClient]);
 
   // Robust mapping from X coordinate to time, even inside future whitespace
-  const coordinateToTimeSafe = useCallback((ts: any, x: number): any => {
-    try {
-      let t = ts.coordinateToTime(x);
-      if (t != null) return t;
-      const rect = (containerRef.current as HTMLDivElement | null)?.getBoundingClientRect();
-      const width = rect?.width || 1;
-      const vr = (ts as any).getVisibleRange?.();
-      if (vr && vr.from != null && vr.to != null) {
-        const fromN = Number(vr.from as any);
-        const toN = Number(vr.to as any);
-        const ratio = Math.max(0, Math.min(1, x / width));
-        const est = fromN + (toN - fromN) * ratio;
-        return est as any;
-      }
-      // Fallback to last candle plus proportion of rightOffset estimate
-      const last = lastTimeRef.current ?? Math.floor(Date.now()/1000);
-      return (last + 60) as any; // minimal push into the future
-    } catch { return lastTimeRef.current as any; }
-  }, []);
+  const coordinateToTimeSafe = useCallback((ts: any, x: number): any => coordToTimeSafe(ts, x, containerRef.current, lastTimeRef.current), []);
 
   const startGlobalTouchDrag = useCallback((id: string, type: 'trend'|'horizontal'|'rectangle'|'arc'|'channel'|'fib', handle: string) => {
     dragStateRef.current = { id, type, handle };
@@ -368,11 +353,7 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
 
   // Helper to guarantee future whitespace so drawings can extend beyond last candle
   const ensureFutureWhitespaceGlobal = useCallback((bars: number = 20) => {
-    try {
-      const chart = chartRef.current;
-      if (!chart) return;
-      chart.timeScale().applyOptions({ rightOffset: Math.max(bars, 12) });
-    } catch {}
+    ensureFutureWhitespaceUtil(chartRef.current, bars);
   }, []);
 
   const ensureTradeMarkerSeries = useCallback(() => {
