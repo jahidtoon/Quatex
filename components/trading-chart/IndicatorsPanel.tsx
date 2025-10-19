@@ -9,6 +9,7 @@ interface Props {
   onClear: () => void;
   onClose: () => void;
   onColorChange?: (key: IndicatorKey, colors: string[]) => void;
+  onParamsChange?: (key: IndicatorKey, params: any) => void;
   docked?: boolean;
 }
 
@@ -32,9 +33,13 @@ const colorPalette = [
   '#FFA500', '#008000', '#000080', '#800000', '#808000', '#808080', '#C0C0C0', '#FFFFFF'
 ];
 
-export default function IndicatorsPanel({ active, onAdd, onRemove, onClear, onClose, onColorChange, docked = false }: Props) {
+export default function IndicatorsPanel({ active, onAdd, onRemove, onClear, onClose, onColorChange, onParamsChange, docked = false }: Props) {
   const [editingColors, setEditingColors] = useState<IndicatorKey | null>(null);
   const [tempColors, setTempColors] = useState<{ [key: string]: string[] }>({});
+  const [editingParams, setEditingParams] = useState<IndicatorKey | null>(null);
+  const [tempParams, setTempParams] = useState<{ [key: string]: any }>({
+    alligator: { jawPeriod: 13, jawShift: 8, teethPeriod: 8, teethShift: 5, lipsPeriod: 5, lipsShift: 3 },
+  });
   const containerStyle: React.CSSProperties = docked ? {
     position: 'relative',
     left: 'auto',
@@ -102,6 +107,17 @@ export default function IndicatorsPanel({ active, onAdd, onRemove, onClear, onCl
                         cursor:'pointer',
                         fontSize: 11
                       }}>Edit</button>
+                      {item.key === 'alligator' && (
+                        <button onClick={() => { setEditingParams('alligator'); }} style={{ 
+                          background:'#0f172a', 
+                          color:'#e5e7eb', 
+                          border:'1px solid #374151', 
+                          padding:'2px 6px', 
+                          borderRadius:4, 
+                          cursor:'pointer',
+                          fontSize: 11
+                        }}>Settings</button>
+                      )}
                       <button onClick={() => onRemove(item.key)} style={{ 
                         background:'#7f1d1d', 
                         color:'#e5e7eb', 
@@ -195,6 +211,39 @@ export default function IndicatorsPanel({ active, onAdd, onRemove, onClear, onCl
                       fontSize: 11
                     }}>Apply</button>
                   </div>
+                </div>
+              )}
+
+              {/* Params Editor: Alligator (Quotex-style) */}
+              {editingParams === 'alligator' && item.key === 'alligator' && (
+                <div style={{ marginTop: 8, padding: 8, background:'#0f172a', border:'1px solid #1f2937', borderRadius: 8 }}>
+                  {(() => {
+                    const cfg = tempParams.alligator || { jawPeriod:13, jawShift:8, teethPeriod:8, teethShift:5, lipsPeriod:5, lipsShift:3 };
+                    const Row = ({ label, field }) => (
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'6px 0' }}>
+                        <div style={{ color:'#9ca3af', fontSize:12 }}>{label}</div>
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <button onClick={() => setTempParams(prev => ({ ...prev, alligator: { ...cfg, [field]: Math.max(1, Number(cfg[field]||0) - 1) } }))} style={{ width:22, height:22, borderRadius:6, border:'1px solid #374151', background:'#111827', color:'#e5e7eb' }}>−</button>
+                          <input type="number" value={cfg[field] ?? 0} onChange={(e) => setTempParams(prev => ({ ...prev, alligator: { ...cfg, [field]: Math.max(0, Number(e.target.value||0)) } }))} style={{ width:60, textAlign:'center', background:'#0b1020', color:'#fff', border:'1px solid #374151', borderRadius:6, padding:'4px 6px' }} />
+                          <button onClick={() => setTempParams(prev => ({ ...prev, alligator: { ...cfg, [field]: Math.min(999, Number(cfg[field]||0) + 1) } }))} style={{ width:22, height:22, borderRadius:6, border:'1px solid #374151', background:'#111827', color:'#e5e7eb' }}>+</button>
+                        </div>
+                      </div>
+                    );
+                    return (
+                      <>
+                        <Row label="Jaws Period" field="jawPeriod" />
+                        <Row label="Jaws Shift" field="jawShift" />
+                        <Row label="Teeth Period" field="teethPeriod" />
+                        <Row label="Teeth Shift" field="teethShift" />
+                        <Row label="Lips Period" field="lipsPeriod" />
+                        <Row label="Lips Shift" field="lipsShift" />
+                        <div style={{ display:'flex', justifyContent:'space-between', marginTop:8 }}>
+                          <button onClick={() => setEditingParams(null)} style={{ background:'#374151', color:'#e5e7eb', border:'1px solid #4b5563', padding:'6px 10px', borderRadius:6, fontSize:12 }}>Cancel</button>
+                          <button onClick={() => { onParamsChange && onParamsChange('alligator', cfg); setEditingParams(null); }} style={{ background:'#059669', color:'#fff', border:'1px solid #10b981', padding:'6px 10px', borderRadius:6, fontSize:12 }}>Apply</button>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </div>

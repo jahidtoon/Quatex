@@ -416,13 +416,15 @@ function formatDurationLabel(seconds) {
 						<i className="fas fa-minus" />
 					</button>
 					<div className="flex-1 text-center">
-						<div className="text-white font-semibold text-lg">
-							{amountMode === 'amount' ? (
-								<span>{formatCurrency(amount)}</span>
-							) : (
-								<span>{Math.round(percent)}%</span>
-							)}
-						</div>
+						<input
+							type="number"
+							value={amountMode === 'amount' ? amount : percent}
+							onChange={(e) => handleAmountChange(e.target.value)}
+							className="w-full bg-transparent text-white font-semibold text-lg text-center border-none outline-none"
+							min={amountMode === 'amount' ? 1 : 1}
+							max={amountMode === 'amount' ? undefined : 100}
+							step={amountStepMode === 'ten' ? 10 : 1}
+						/>
 						{amountMode === 'percent' && (
 							<div className="text-[11px] text-gray-400" suppressHydrationWarning>
 								≈ {mounted ? formatCurrency(effectiveAmount) : '—'}
@@ -450,7 +452,17 @@ function formatDurationLabel(seconds) {
 					<button type="button" onClick={() => stepDuration('dec')} className="w-8 h-8 rounded-full bg-[#0f172a] border border-[#374151] text-white flex items-center justify-center">
 						<i className="fas fa-minus" />
 					</button>
-					<div className="flex-1 text-center text-white font-semibold text-lg font-mono">{formatDurationLabel(duration)}</div>
+					<div className="flex-1 text-center">
+						<input
+							type="number"
+							value={duration}
+							onChange={(e) => handleDurationChange(e.target.value)}
+							className="w-full bg-transparent text-white font-semibold text-lg font-mono text-center border-none outline-none"
+							min={10}
+							max={86400}
+							step={durationStepMode === 'min' ? 60 : 10}
+						/>
+					</div>
 					<button type="button" onClick={() => stepDuration('inc')} className="w-8 h-8 rounded-full bg-[#0f172a] border border-[#374151] text-white flex items-center justify-center">
 						<i className="fas fa-plus" />
 					</button>
@@ -473,25 +485,11 @@ function formatDurationLabel(seconds) {
 			)}
 
 			{/* Action buttons */}
-			<div className="grid grid-cols-2 gap-3 mt-auto pt-2">
-				<button
-					onClick={() => executeTrade('SELL')}
-					className="bg-[#dc2626] hover:bg-[#b91c1c] disabled:bg-[#7f1d1d] text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow"
-					disabled={placing}
-					type="button"
-				>
-					{placing ? (
-						<>
-							<span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-							Placing…
-						</>
-					) : (
-						'DOWN'
-					)}
-				</button>
+			<div className="grid grid-rows-2 gap-3 mt-auto pt-2">
+				{/* BUY (UP) on top */}
 				<button
 					onClick={() => executeTrade('BUY')}
-					className="bg-[#059669] hover:bg-[#047857] disabled:bg-[#065f46] text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow"
+					className="w-full bg-[#059669] hover:bg-[#047857] disabled:bg-[#065f46] text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow"
 					disabled={placing}
 					type="button"
 				>
@@ -502,6 +500,22 @@ function formatDurationLabel(seconds) {
 						</>
 					) : (
 						'UP'
+					)}
+				</button>
+				{/* SELL (DOWN) below */}
+				<button
+					onClick={() => executeTrade('SELL')}
+					className="w-full bg-[#dc2626] hover:bg-[#b91c1c] disabled:bg-[#7f1d1d] text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 shadow"
+					disabled={placing}
+					type="button"
+				>
+					{placing ? (
+						<>
+							<span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+							Placing…
+						</>
+					) : (
+						'DOWN'
 					)}
 				</button>
 			</div>

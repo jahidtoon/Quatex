@@ -22,6 +22,7 @@ export function useIndicators(chartRef: MutableRefObject<IChartApi | null>, seri
   const seriesMap = useRef<Map<IndicatorKey, SeriesEntry>>(new Map());
   const markerMap = useRef<Map<IndicatorKey, any[]>>(new Map());
   const colorsMap = useRef<Map<IndicatorKey, string[]>>(new Map());
+  const paramsMap = useRef<Map<IndicatorKey, any>>(new Map());
 
   const upsertSeries = useCallback((key: IndicatorKey, outputs: IndicatorOutput[], customColors?: string[]) => {
     const chart = chartRef.current; 
@@ -135,6 +136,7 @@ export function useIndicators(chartRef: MutableRefObject<IChartApi | null>, seri
     active.forEach((key) => {
       let outputs: IndicatorOutput[] = [];
       let markers: any[] | null = null;
+      const params = paramsMap.current.get(key);
       
       try {
         switch (key) {
@@ -148,7 +150,7 @@ export function useIndicators(chartRef: MutableRefObject<IChartApi | null>, seri
           case 'supertrend': outputs = calcSupertrend(candles); break;
           case 'psar': markers = calcPSARMarkers(candles); break;
           case 'zigzag': outputs = calcZigZag(candles); break;
-          case 'alligator': outputs = calcAlligator(candles, intervalSec); break;
+          case 'alligator': outputs = calcAlligator(candles, intervalSec, params); break;
           case 'volume': outputs = calcVolume(candles); break;
         }
         
@@ -166,6 +168,7 @@ export function useIndicators(chartRef: MutableRefObject<IChartApi | null>, seri
     // compute and draw immediately for this key
     let outputs: IndicatorOutput[] = [];
     let markers: any[] | null = null;
+    const params = paramsMap.current.get(key);
     
     try {
       switch (key) {
@@ -179,7 +182,7 @@ export function useIndicators(chartRef: MutableRefObject<IChartApi | null>, seri
         case 'supertrend': outputs = calcSupertrend(candles); break;
         case 'psar': markers = calcPSARMarkers(candles); break;
         case 'zigzag': outputs = calcZigZag(candles); break;
-        case 'alligator': outputs = calcAlligator(candles, intervalSec); break;
+        case 'alligator': outputs = calcAlligator(candles, intervalSec, params); break;
         case 'volume': outputs = calcVolume(candles); break;
       }
       
@@ -210,5 +213,21 @@ export function useIndicators(chartRef: MutableRefObject<IChartApi | null>, seri
     }
   }, [active]);
 
-  return { active, add, remove, clear, update, updateColors };
+  const updateParams = useCallback((key: IndicatorKey, params: any, candles: Candle[], intervalSec: number) => {
+    if (!active.includes(key)) return;
+    paramsMap.current.set(key, params || {});
+    // Recompute outputs with new params
+    try {
+      let outputs: IndicatorOutput[] = [];
+      switch (key) {
+        case 'alligator': outputs = calcAlligator(candles, intervalSec, params); break;
+        default: break;
+      }
+      if (outputs.length) upsertSeries(key, outputs);
+    } catch (e) {
+      console.error('updateParams error', e);
+    }
+  }, [active, upsertSeries]);
+
+  return { active, add, remove, clear, update, updateColors, updateParams };
 }

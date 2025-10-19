@@ -24,6 +24,7 @@ interface Props {
   symbol?: string; // e.g., ETHUSDT or EUR_USD
   onPriceUpdate?: (price: number) => void;
   onSymbolChange?: (symbol: string) => void; // notify parent when user selects a new symbol
+  showSymbolPicker?: boolean; // show/hide internal symbol picker bar
   openTrades?: Array<{
     id: string;
     symbol: string;
@@ -38,7 +39,7 @@ interface Props {
   authToken?: string | null;
 }
 
-export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, onSymbolChange, openTrades = [], authToken }: Props) {
+export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, onSymbolChange, openTrades = [], authToken, showSymbolPicker = true }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<any> | null>(null);
@@ -47,6 +48,12 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
   const [loading, setLoading] = useState(true);
   const [isChangingType, setIsChangingType] = useState(false); // New state for type changing
   const [pair, setPair] = useState(symbol);
+  // Keep internal pair in sync when parent changes symbol prop (via tabs/modal)
+  useEffect(() => {
+    if (symbol && symbol !== pair) {
+      setPair(symbol);
+    }
+  }, [symbol]);
   const [tf, setTf] = useState<'5s' | '10s' | '15s' | '30s' | '1m' | '5m' | '15m' | '1h' | '4h' | '1d'>('5s');
   const [chartType, setChartType] = useState<ChartVisualType>('candles');
   // Ref to always-current chart type so background intervals don't use stale closure
@@ -72,16 +79,251 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
   
   // Indicator states
   const [showIndicators, setShowIndicators] = useState(false);
-  const { active, add, remove, clear, update, updateColors } = useIndicators(chartRef, seriesRef);
+  const { active, add, remove, clear, update, updateColors, updateParams } = useIndicators(chartRef, seriesRef);
 
   // Trade Line Mode
   const [tradeLineMode, setTradeLineMode] = useState(false);
 
   // Drawing tools
-  const [drawingTool, setDrawingTool] = useState(null);
+  const [drawingTool, setDrawingTool] = useState<null | 'trend' | 'horizontal' | 'rectangle' | 'arc' | 'channel' | 'fib'>(null);
   const [showDrawingMenu, setShowDrawingMenu] = useState(false);
   const [drawings, setDrawings] = useState([]);
   const drawingStateRef = useRef({ points: [] });
+  const [isDraggingDraw, setIsDraggingDraw] = useState(false);
+  // Editing state for drawings (selection + drag)
+  const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
+  const dragStateRef = useRef<null | { id: string; type: 'trend'|'horizontal'|'rectangle'|'arc'|'channel'|'fib'; handle: string }>(null);
+  // Canvas overlay for filled arc rendering
+  const arcCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const crosshairRef = useRef<{x:number;y:number}|null>(null);
+  const arcAutoSpawnedRef = useRef<boolean>(false);
+
+  // Global drag listeners (more reliable than relying only on overlay events)
+  const endGlobalDrag = useRef<null | (() => void)>(null);
+  const updateDragFromClient = useCallback((clientX: number, clientY: number) => {
+    const drag = dragStateRef.current;
+    if (!drag || !chartRef.current || !seriesRef.current || !containerRef.current) return;
+    const chart = chartRef.current;
+    const series = seriesRef.current as any;
+    const rect = (containerRef.current as HTMLDivElement).getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const ts = chart.timeScale();
+    const t = coordinateToTimeSafe(ts, x);
+    // If user drags far into the future, extend the spacer horizon dynamically
+    try {
+      const tNum = Number(t as any);
+      const last = Number(lastTimeRef.current ?? Math.floor(Date.now()/1000));
+      const bucket = getBucketSeconds(tfRef.current);
+      if (Number.isFinite(tNum) && tNum > last + bucket * 2) {
+        const neededBars = Math.min(1000, Math.max(10, Math.ceil((tNum - last) / bucket) + 5));
+        extendFutureHorizon(neededBars);
+      }
+    } catch {}
+    const p = series.coordinateToPrice ? series.coordinateToPrice(y) : null;
+    setDrawings(prev => prev.map(d => {
+      if (d.id !== drag.id) return d;
+      if (drag.type === 'trend') {
+        const next = { ...d } as any;
+        if (drag.handle === 'start' && t != null && p != null) {
+          next.start = { time: t as any, price: p };
+        } else if (drag.handle === 'end' && t != null && p != null) {
+          next.end = { time: t as any, price: p };
+        } else if (drag.handle === 'line' && t != null && p != null) {
+          const sT = Number((d.start?.time as any) || 0);
+          const eT = Number((d.end?.time as any) || 0);
+          const midT = (sT + eT) / 2;
+          const midP = ((d.start?.price ?? 0) + (d.end?.price ?? 0)) / 2;
+          const dt = Number((t as any)) - midT;
+          const dp = (p as number) - midP;
+          next.start = { time: (sT + dt) as any, price: (d.start?.price ?? 0) + dp };
+          next.end = { time: (eT + dt) as any, price: (d.end?.price ?? 0) + dp };
+        }
+        const n1 = Math.floor(Number((next.start.time as any)));
+        const n2 = Math.floor(Number((next.end.time as any)));
+        let aT: any = next.start.time; let aP = next.start.price;
+        let bT: any = next.end.time;   let bP = next.end.price;
+        if (Number.isFinite(n1) && Number.isFinite(n2)) {
+          if (n1 === n2) { aT = (n1 - 1) as any; bT = (n2 + 1) as any; }
+          else if (n1 > n2) { aT = next.end.time as any; aP = next.end.price; bT = next.start.time as any; bP = next.start.price; }
+        }
+        const aTN = Number(aT), bTN = Number(bT), aPN = Number(aP), bPN = Number(bP);
+        if (!Number.isFinite(aTN) || !Number.isFinite(bTN) || !Number.isFinite(aPN) || !Number.isFinite(bPN) || !(aTN < bTN)) {
+          return d;
+        }
+        try { d.series.setData([{ time: aTN as any, value: aPN }, { time: bTN as any, value: bPN }]); } catch {}
+        return next;
+      } else if (drag.type === 'horizontal') {
+        if (p == null || !Number.isFinite(p as number)) return d;
+        // Recreate price line at new price
+        const s = seriesRef.current as any;
+        try { if (d.line) s.removePriceLine(d.line); } catch {}
+        let line: any = null;
+        try { line = s.createPriceLine({ price: p as number, color: '#FF6B35', lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: d?.title || `H-Line` }); } catch {}
+        return { ...d, price: p as number, line };
+      } else if (drag.type === 'rectangle') {
+        if (t == null || p == null) return d;
+        const next = { ...d } as any;
+        if (drag.handle === 'a') next.a = { time: t as any, price: p as number };
+        else if (drag.handle === 'b') next.b = { time: t as any, price: p as number };
+        else if (drag.handle === 'move') {
+          const aT = Number((d.a?.time as any) || 0);
+          const bT = Number((d.b?.time as any) || 0);
+          const midT = (aT + bT) / 2;
+          const midP = ((d.a?.price ?? 0) + (d.b?.price ?? 0)) / 2;
+          const dt = Number((t as any)) - midT;
+          const dp = (p as number) - midP;
+          next.a = { time: (aT + dt) as any, price: (d.a?.price ?? 0) + dp };
+          next.b = { time: (bT + dt) as any, price: (d.b?.price ?? 0) + dp };
+        }
+        // Update series for top and bottom edges
+        const t1N = Math.floor(Number((next.a.time as any)));
+        const t2N = Math.floor(Number((next.b.time as any)));
+        if (!Number.isFinite(t1N) || !Number.isFinite(t2N)) return d;
+        let left = t1N, right = t2N; let pTop = Math.max(next.a.price, next.b.price); let pBot = Math.min(next.a.price, next.b.price);
+        if (left === right) { left -= 1; right += 1; }
+        if (left > right) { const tmp = left; left = right; right = tmp; }
+        try { d.seriesTop?.setData([{ time: left as any, value: pTop }, { time: right as any, value: pTop }]); } catch {}
+        try { d.seriesBottom?.setData([{ time: left as any, value: pBot }, { time: right as any, value: pBot }]); } catch {}
+        return next;
+      } else if (drag.type === 'channel') {
+        if (t == null || p == null) return d;
+        const next = { ...d } as any;
+        if (drag.handle === 'start') next.start = { time: t as any, price: p as number };
+        else if (drag.handle === 'end') next.end = { time: t as any, price: p as number };
+        else if (drag.handle === 'move') {
+          const sT = Number((d.start?.time as any) || 0);
+          const eT = Number((d.end?.time as any) || 0);
+          const midT = (sT + eT) / 2;
+          const midP = ((d.start?.price ?? 0) + (d.end?.price ?? 0)) / 2;
+          const dt = Number((t as any)) - midT;
+          const dp = (p as number) - midP;
+          next.start = { time: (sT + dt) as any, price: (d.start?.price ?? 0) + dp };
+          next.end = { time: (eT + dt) as any, price: (d.end?.price ?? 0) + dp };
+        } else if (drag.handle === 'offset') {
+          // Compute new offset so that parallel line midpoint goes through pointer
+          const sT = Number((d.start?.time as any) || 0);
+          const eT = Number((d.end?.time as any) || 0);
+          const midT = (sT + eT) / 2;
+          const x1 = sT, x2 = eT, px = Number((t as any));
+          const y1 = d.start.price, y2 = d.end.price;
+          const m = (y2 - y1) / (x2 - x1 || 1);
+          const baseAtT = y1 + m * (midT - x1);
+          const dpOff = (p as number) - baseAtT;
+          next.offset = dpOff;
+        }
+        // Update series
+        const t1N = Math.floor(Number((next.start.time as any)));
+        const t2N = Math.floor(Number((next.end.time as any)));
+        if (!Number.isFinite(t1N) || !Number.isFinite(t2N)) return d;
+        let aT = t1N, bT = t2N; let aP = next.start.price, bP = next.end.price;
+        if (aT === bT) { aT -= 1; bT += 1; }
+        if (aT > bT) { const ttmp = aT; aT = bT; bT = ttmp; const ptmp = aP; aP = bP; bP = ptmp; }
+        try { d.seriesBase?.setData([{ time: aT as any, value: aP }, { time: bT as any, value: bP }]); } catch {}
+        try { d.seriesParallel?.setData([{ time: aT as any, value: aP + next.offset }, { time: bT as any, value: bP + next.offset }]); } catch {}
+        return next;
+      } else if (drag.type === 'arc') {
+        if (t == null || p == null) return d;
+        const next = { ...d } as any;
+        // Maintain horizontal baseline for endpoints
+        const currentBase = typeof d.start?.price === 'number' ? d.start.price : (typeof d.end?.price === 'number' ? d.end.price : (p as number));
+        if (drag.handle === 'start') next.start = { time: t as any, price: currentBase };
+        else if (drag.handle === 'end') next.end = { time: t as any, price: currentBase };
+        else if (drag.handle === 'control') next.control = { time: t as any, price: p as number };
+        else if (drag.handle === 'move') {
+          const sT = Number((d.start?.time as any) || 0);
+          const eT = Number((d.end?.time as any) || 0);
+          const cT = Number((d.control?.time as any) || 0);
+          const midT = (sT + eT + cT) / 3;
+          const baseP = (d.start?.price ?? d.end?.price ?? 0);
+          const midP = (baseP + baseP + (d.control?.price ?? baseP)) / 3;
+          const dt = Number((t as any)) - midT;
+          const dp = (p as number) - midP;
+          const newBase = (baseP + dp);
+          next.start = { time: (sT + dt) as any, price: newBase };
+          next.end = { time: (eT + dt) as any, price: newBase };
+          next.control = { time: (cT + dt) as any, price: (d.control?.price ?? newBase) + dp };
+        }
+        // No underlying series update for arc; overlay canvas handles drawing
+        return next;
+      } else if (drag.type === 'fib') {
+        if (t == null || p == null) return d;
+        const next = { ...d } as any;
+        if (drag.handle === 'start') next.start = { time: t as any, price: p as number };
+        else if (drag.handle === 'end') next.end = { time: t as any, price: p as number };
+        else if (drag.handle === 'move') {
+          const sP = d.start?.price ?? 0; const eP = d.end?.price ?? 0;
+          const midP = (sP + eP) / 2; const dp = (p as number) - midP;
+          next.start = { ...d.start, price: sP + dp };
+          next.end = { ...d.end, price: eP + dp };
+        }
+        // Rebuild fib lines
+        const s = seriesRef.current as any;
+        try { (next.lines || []).forEach((ln: any) => { try { s.removePriceLine(ln); } catch {} }); } catch {}
+        const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+        const lines: any[] = [];
+        const pStart = next.start.price, pEnd = next.end.price;
+        const diff = pEnd - pStart;
+        levels.forEach(level => {
+          try { const ln = s.createPriceLine({ price: pStart + diff * level, color: '#7dd3fc', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: `${Math.round(level*100)}%` }); lines.push(ln); } catch {}
+        });
+        next.lines = lines;
+        return next;
+      }
+      return d;
+    }));
+  }, []);
+
+  const startGlobalDrag = useCallback((id: string, type: 'trend'|'horizontal'|'rectangle'|'arc'|'channel'|'fib', handle: string) => {
+    dragStateRef.current = { id, type, handle };
+    setIsDraggingDraw(true);
+    const onMove = (e: MouseEvent) => { e.preventDefault(); updateDragFromClient(e.clientX, e.clientY); };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setIsDraggingDraw(false);
+      dragStateRef.current = null;
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    endGlobalDrag.current = () => { try { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); } catch {} };
+  }, [updateDragFromClient]);
+
+  // Robust mapping from X coordinate to time, even inside future whitespace
+  const coordinateToTimeSafe = useCallback((ts: any, x: number): any => {
+    try {
+      let t = ts.coordinateToTime(x);
+      if (t != null) return t;
+      const rect = (containerRef.current as HTMLDivElement | null)?.getBoundingClientRect();
+      const width = rect?.width || 1;
+      const vr = (ts as any).getVisibleRange?.();
+      if (vr && vr.from != null && vr.to != null) {
+        const fromN = Number(vr.from as any);
+        const toN = Number(vr.to as any);
+        const ratio = Math.max(0, Math.min(1, x / width));
+        const est = fromN + (toN - fromN) * ratio;
+        return est as any;
+      }
+      // Fallback to last candle plus proportion of rightOffset estimate
+      const last = lastTimeRef.current ?? Math.floor(Date.now()/1000);
+      return (last + 60) as any; // minimal push into the future
+    } catch { return lastTimeRef.current as any; }
+  }, []);
+
+  const startGlobalTouchDrag = useCallback((id: string, type: 'trend'|'horizontal'|'rectangle'|'arc'|'channel'|'fib', handle: string) => {
+    dragStateRef.current = { id, type, handle };
+    setIsDraggingDraw(true);
+    const onMove = (e: TouchEvent) => { const t = e.touches?.[0]; if (!t) return; e.preventDefault(); updateDragFromClient(t.clientX, t.clientY); };
+    const onUp = () => {
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+      setIsDraggingDraw(false);
+      dragStateRef.current = null;
+    };
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+    endGlobalDrag.current = () => { try { window.removeEventListener('touchmove', onMove); window.removeEventListener('touchend', onUp); } catch {} };
+  }, [updateDragFromClient]);
 
   // Simple Trade Lines System
   const {
@@ -124,6 +366,15 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
     }
   }, []);
 
+  // Helper to guarantee future whitespace so drawings can extend beyond last candle
+  const ensureFutureWhitespaceGlobal = useCallback((bars: number = 20) => {
+    try {
+      const chart = chartRef.current;
+      if (!chart) return;
+      chart.timeScale().applyOptions({ rightOffset: Math.max(bars, 12) });
+    } catch {}
+  }, []);
+
   const ensureTradeMarkerSeries = useCallback(() => {
     if (!chartRef.current) return null;
     if (!tradeMarkersSeriesRef.current) {
@@ -135,7 +386,14 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
         lastValueVisible: false,
         priceScaleId: 'overlay',
       });
-      overlay.setData([]);
+      // Initial stub data; will be replaced on candle load
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        overlay.setData([
+          { time: (now - 1) as any, value: 0 },
+          { time: (now + 1) as any, value: 1 },
+        ]);
+      } catch {}
       tradeMarkersSeriesRef.current = overlay;
     }
     return tradeMarkersSeriesRef.current;
@@ -201,12 +459,26 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
 
     const markerSeries = ensureTradeMarkerSeries();
     if (markerSeries) {
+      // Ensure marker series has valid data covering the time range
+      try {
+        const candles = lastCandlesRef.current || [];
+        if (candles.length > 1) {
+          markerSeries.setData(candles.map(c => ({ time: c.time as any, value: c.close ?? c.open ?? 0 })));
+        } else {
+          const now = Math.floor(Date.now() / 1000);
+          markerSeries.setData([
+            { time: (now - 1) as any, value: 0 },
+            { time: (now + 1) as any, value: 1 },
+          ]);
+        }
+      } catch {}
       // Include both open & recently closed in marker layer
       const all = (openTradesRef.current || []).slice();
       const nowSec = Math.floor(Date.now()/1000);
-      const markers = all.map((trade) => {
+      const safeMarkers = all.map((trade) => {
         const direction = (trade.direction || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY';
-        const time = parseTradeTime(trade.openTime ?? trade.open_time ?? trade.createdAt ?? trade.created_at ?? lastTimeRef.current);
+        const t0 = parseTradeTime(trade.openTime ?? trade.open_time ?? trade.createdAt ?? trade.created_at ?? lastTimeRef.current);
+        const time = Number.isFinite(Number(t0)) ? Number(t0) : nowSec;
         const amount = Number(trade.amount ?? 0);
         const statusRaw = (trade.status || trade.result || '').toLowerCase();
         const isClosed = ['closed','win','loss'].includes(statusRaw);
@@ -223,15 +495,17 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
         const color = isWin ? '#16a34a' : isLoss ? '#dc2626' : overdue ? '#f59e0b' : baseColor;
         const shape = isWin ? 'circle' : isLoss ? 'square' : overdue ? 'arrowLeft' : (direction === 'BUY' ? 'arrowUp' : 'arrowDown');
         return {
-          time: (time ?? lastTimeRef.current ?? 0) as Time,
+          time: time as unknown as Time,
           position: direction === 'BUY' ? 'belowBar' : 'aboveBar',
           color,
           shape,
           text: textParts.join(' '),
         } as const;
-      });
+      })
+      .filter(m => Number.isFinite(Number(m.time)))
+      .sort((a, b) => (Number(a.time as any) - Number(b.time as any)));
       try {
-        markerSeries.setMarkers(markers);
+        markerSeries.setMarkers(safeMarkers);
       } catch (error) {
         console.error('[chart] setMarkers failed', error);
       }
@@ -317,10 +591,12 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
     return () => { active = false; clearInterval(id); };
   }, [rebuildPriceLines]);
   
-  const createDrawing = useCallback((tool, point1, point2 = null) => {
+  const createDrawing = useCallback((tool, point1, point2 = null, point3: any = null) => {
     if (!chartRef.current || !seriesRef.current) return;
     const chart = chartRef.current;
     const series = seriesRef.current;
+    // Make sure there is enough future whitespace for drawing endpoints beyond last candle
+    try { chart.timeScale().applyOptions({ rightOffset: 24 }); } catch {}
     let drawing = null;
     if (tool === 'horizontal') {
       const price = series.coordinateToPrice(point1.y);
@@ -340,41 +616,104 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
           line,
         };
       }
-    } else if (tool === 'vertical') {
-      const time = chart.timeScale().coordinateToTime(point1.x);
-      if (time !== null) {
-        const lineSeries = chart.addLineSeries({
-          color: '#FF6B35',
-          lineWidth: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        });
-
-        // Use fixed values that span a wide price range.
-        // Ensure ascending time order by using small offsets around the chosen time.
-  const minPrice = 0;
-  const maxPrice = 1000000; // Very high default
-  const baseRaw = Number((time as any));
-  if (!Number.isFinite(baseRaw)) return; // safety
-  const base = Math.floor(baseRaw);
-  const t1 = base - 1;
-  const t2 = base + 1;
-        const p1 = { time: t1 as any, value: minPrice };
-        const p2 = { time: t2 as any, value: maxPrice };
-        lineSeries.setData([p1, p2]);
-
+    } else if (tool === 'rectangle' && point2) {
+      const price1 = series.coordinateToPrice(point1.y);
+      const price2 = series.coordinateToPrice(point2.y);
+      const time1 = coordinateToTimeSafe(chart.timeScale(), point1.x);
+      const time2 = coordinateToTimeSafe(chart.timeScale(), point2.x);
+      if (price1 != null && price2 != null && time1 != null && time2 != null) {
+        const seriesTop = chart.addLineSeries({ color: '#fbbf24', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+        const seriesBottom = chart.addLineSeries({ color: '#fbbf24', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+        // Seed data
+        const t1n = Math.floor(Number((time1 as any))); const t2n = Math.floor(Number((time2 as any)));
+        const left = Math.min(t1n, t2n) - 1; const right = Math.max(t1n, t2n) + 1;
+        try { seriesTop.setData([{ time: left as any, value: Math.max(price1, price2) }, { time: right as any, value: Math.max(price1, price2) }]); } catch {}
+        try { seriesBottom.setData([{ time: left as any, value: Math.min(price1, price2) }, { time: right as any, value: Math.min(price1, price2) }]); } catch {}
         drawing = {
           id: Date.now().toString(),
-          type: 'vertical',
-          time,
-          series: lineSeries,
-        };
+          type: 'rectangle',
+          a: { time: time1 as any, price: price1 },
+          b: { time: time2 as any, price: price2 },
+          seriesTop,
+          seriesBottom,
+        } as any;
+      }
+    } else if (tool === 'fib' && point2) {
+      const price1 = series.coordinateToPrice(point1.y);
+      const price2 = series.coordinateToPrice(point2.y);
+      const time1 = coordinateToTimeSafe(chart.timeScale(), point1.x);
+      const time2 = coordinateToTimeSafe(chart.timeScale(), point2.x);
+      if (price1 != null && price2 != null && time1 != null && time2 != null) {
+        const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+        const lines: any[] = [];
+        const pStart = price1, pEnd = price2; const diff = pEnd - pStart;
+        try {
+          levels.forEach(level => {
+            const ln = (series as any).createPriceLine({ price: pStart + diff * level, color: '#7dd3fc', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: `${Math.round(level*100)}%` });
+            lines.push(ln);
+          });
+        } catch {}
+        drawing = {
+          id: Date.now().toString(),
+          type: 'fib',
+          start: { time: time1 as any, price: price1 },
+          end: { time: time2 as any, price: price2 },
+          lines,
+        } as any;
+      }
+    } else if (tool === 'arc' && point2 && point3) {
+      const p1 = series.coordinateToPrice(point1.y);
+      const p2 = series.coordinateToPrice(point2.y);
+      const p3 = series.coordinateToPrice(point3.y);
+      const t1 = coordinateToTimeSafe(chart.timeScale(), point1.x);
+      const t2 = coordinateToTimeSafe(chart.timeScale(), point2.x);
+      const t3 = coordinateToTimeSafe(chart.timeScale(), point3.x);
+      if (p1 != null && p2 != null && p3 != null && t1 != null && t2 != null && t3 != null) {
+        // Force endpoints to share a horizontal baseline like the reference tool
+        const basePrice = p1; // lock both endpoints to start price
+        drawing = {
+          id: Date.now().toString(),
+          type: 'arc',
+          start: { time: t1 as any, price: basePrice },
+          end: { time: t2 as any, price: basePrice },
+          control: { time: t3 as any, price: p3 },
+        } as any;
+      }
+    } else if (tool === 'channel' && point2 && point3) {
+      const p1 = series.coordinateToPrice(point1.y);
+      const p2 = series.coordinateToPrice(point2.y);
+      const t1 = coordinateToTimeSafe(chart.timeScale(), point1.x);
+      const t2 = coordinateToTimeSafe(chart.timeScale(), point2.x);
+      const t3 = coordinateToTimeSafe(chart.timeScale(), point3.x);
+      const p3 = series.coordinateToPrice(point3.y);
+      if (p1 != null && p2 != null && p3 != null && t1 != null && t2 != null && t3 != null) {
+        // Estimate base-line price at t3 using linear interpolation
+        const x1 = Number(t1 as any), x2 = Number(t2 as any), x3 = Number(t3 as any);
+        const m = (p2 - p1) / (x2 - x1 || 1);
+        const baseAtT3 = p1 + m * (x3 - x1);
+        const offset = p3 - baseAtT3; // price offset
+        const seriesBase = chart.addLineSeries({ color: '#34d399', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+        const seriesParallel = chart.addLineSeries({ color: '#34d399', lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+        // Seed
+        const aT = Math.floor(Number((t1 as any))); const bT = Math.floor(Number((t2 as any)));
+        const left = Math.min(aT, bT) - 1; const right = Math.max(aT, bT) + 1;
+        try { seriesBase.setData([{ time: left as any, value: p1 }, { time: right as any, value: p2 }]); } catch {}
+        try { seriesParallel.setData([{ time: left as any, value: p1 + offset }, { time: right as any, value: p2 + offset }]); } catch {}
+        drawing = {
+          id: Date.now().toString(),
+          type: 'channel',
+          start: { time: t1 as any, price: p1 },
+          end: { time: t2 as any, price: p2 },
+          offset,
+          seriesBase,
+          seriesParallel,
+        } as any;
       }
     } else if (tool === 'trend' && point2) {
       const price1 = series.coordinateToPrice(point1.y);
       const price2 = series.coordinateToPrice(point2.y);
-      const time1 = chart.timeScale().coordinateToTime(point1.x);
-      const time2 = chart.timeScale().coordinateToTime(point2.x);
+      const time1 = coordinateToTimeSafe(chart.timeScale(), point1.x);
+      const time2 = coordinateToTimeSafe(chart.timeScale(), point2.x);
       if (price1 !== null && price2 !== null && time1 !== null && time2 !== null) {
         const lineSeries = chart.addLineSeries({
           color: '#FF6B35',
@@ -428,10 +767,23 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
       if (d.series && chart) {
         try { chart.removeSeries(d.series); } catch {}
       }
+      // Additional series cleanup for new tools
+      if (chart) {
+        try { if (d.seriesTop) chart.removeSeries(d.seriesTop); } catch {}
+        try { if (d.seriesBottom) chart.removeSeries(d.seriesBottom); } catch {}
+        try { if (d.seriesBase) chart.removeSeries(d.seriesBase); } catch {}
+        try { if (d.seriesParallel) chart.removeSeries(d.seriesParallel); } catch {}
+        
+      }
+      if (s && d.lines && Array.isArray(d.lines)) {
+        try { d.lines.forEach((ln: any) => { try { (s as any).removePriceLine(ln); } catch {} }); } catch {}
+      }
     });
     setDrawings([]);
     drawingStateRef.current.points = [];
     setDrawingTool(null);
+    setSelectedDrawingId(null);
+    dragStateRef.current = null;
   }, [drawings]);
   
   // Drawing tools
@@ -439,14 +791,13 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
     if (!drawingTool || !chartRef.current) return;
     const handleClick = (param) => {
       if (!param.point) return;
-      if (drawingTool === 'horizontal' || drawingTool === 'vertical') {
-        createDrawing(drawingTool, param.point);
-      } else {
-        drawingStateRef.current.points.push(param.point);
-        if (drawingStateRef.current.points.length >= 2) {
-          createDrawing(drawingTool, drawingStateRef.current.points[0], drawingStateRef.current.points[1]);
-          drawingStateRef.current.points = [];
-        }
+      const tool = drawingTool as any;
+      const req = tool === 'horizontal' ? 1 : (tool === 'trend' || tool === 'rectangle' || tool === 'fib') ? 2 : (tool === 'arc' || tool === 'channel') ? 3 : 1;
+      drawingStateRef.current.points.push(param.point);
+      if (drawingStateRef.current.points.length >= req) {
+        const [p1, p2, p3] = drawingStateRef.current.points;
+        createDrawing(tool, p1, p2 || null, p3 || null);
+        drawingStateRef.current.points = [];
       }
     };
     chartRef.current.subscribeClick(handleClick);
@@ -456,6 +807,59 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
       }
     };
   }, [drawingTool, createDrawing]);
+
+  // Auto-spawn a default Arc on tool select so user can drag immediately
+  useEffect(() => {
+    if (drawingTool !== 'arc') { arcAutoSpawnedRef.current = false; return; }
+    if (!chartRef.current || !seriesRef.current) return;
+    if (arcAutoSpawnedRef.current) return;
+    const chart = chartRef.current;
+    const series = seriesRef.current as any;
+    // Determine time window
+    let fromNum: number | null = null, toNum: number | null = null;
+    try {
+      const vr = (chart.timeScale() as any).getVisibleRange?.();
+      if (vr && vr.from != null && vr.to != null) { fromNum = Number(vr.from as any); toNum = Number(vr.to as any); }
+    } catch {}
+    const last = Number(lastTimeRef.current ?? 0) || (fromNum && toNum ? (fromNum + toNum) / 2 : Math.floor(Date.now()/1000));
+    const tf = tfRef.current;
+    const durSec = tf === '5s' ? 100 : tf === '10s' ? 200 : tf === '15s' ? 300 : tf === '30s' ? 600 : tf === '1m' ? 1200 : tf === '5m' ? 6000 : tf === '15m' ? 18000 : tf === '1h' ? 72000 : tf === '4h' ? 288000 : 1728000;
+    const winFrom = fromNum ?? (last - durSec * 0.9);
+    const winTo = toNum ?? (last - durSec * 0.1);
+    const t1 = Math.floor(winFrom + (winTo - winFrom) * 0.3);
+    const t2 = Math.floor(winFrom + (winTo - winFrom) * 0.7);
+    // Determine baseline and amplitude from recent candles
+    const candles = lastCandlesRef.current || [];
+    const recent = candles.slice(-Math.min(120, candles.length));
+    const closes = recent.map(c => c.close);
+    const highs = recent.map(c => c.high);
+    const lows = recent.map(c => c.low);
+    const baseline = closes.length ? closes[closes.length - 1] : 0;
+    const range = (Math.max(...highs, baseline) - Math.min(...lows, baseline)) || (baseline * 0.01) || 1;
+    const amp = range * 0.35;
+    const controlT = Math.floor((t1 + t2) / 2);
+    const controlP = baseline + amp;
+    // Convert to pixel points for createDrawing
+    const ts = chart.timeScale();
+    let x1 = ts.timeToCoordinate(t1 as any) as number | null;
+    let x2 = ts.timeToCoordinate(t2 as any) as number | null;
+    let xc = ts.timeToCoordinate(controlT as any) as number | null;
+    let yBase = series.priceToCoordinate ? series.priceToCoordinate(baseline) : null;
+    let yCtrl = series.priceToCoordinate ? series.priceToCoordinate(controlP) : null;
+    const container = containerRef.current as HTMLDivElement | null;
+    const fallbackRect = container?.getBoundingClientRect();
+    if (x1 == null && fallbackRect) x1 = Math.floor(fallbackRect.width * 0.3);
+    if (x2 == null && fallbackRect) x2 = Math.floor(fallbackRect.width * 0.7);
+    if (xc == null && fallbackRect) xc = Math.floor(fallbackRect.width * 0.5);
+    if (yBase == null && fallbackRect) yBase = Math.floor(fallbackRect.height * 0.6);
+    if (yCtrl == null && fallbackRect) yCtrl = Math.floor(fallbackRect.height * 0.35);
+    if (x1 == null || x2 == null || xc == null || yBase == null || yCtrl == null) return;
+    const p1 = { x: x1, y: yBase };
+    const p2 = { x: x2, y: yBase };
+    const p3 = { x: xc, y: yCtrl };
+    createDrawing('arc', p1, p2, p3);
+    arcAutoSpawnedRef.current = true;
+  }, [drawingTool]);
   
   // Assets loaded from backend (includes Forex + Crypto). Fallback to popular crypto list if API unavailable.
   const [assetList, setAssetList] = useState<Array<{symbol:string; display?:string; type?:string; payout?:number}>>([]);
@@ -621,6 +1025,152 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
     };
   }, []);
 
+  // Arc fill render loop
+  useEffect(() => {
+    let raf = 0;
+    const draw = () => {
+      try {
+        const canvas = arcCanvasRef.current as HTMLCanvasElement | null;
+        const chart = chartRef.current;
+        const series = seriesRef.current as any;
+        if (!canvas || !chart || !series) { raf = requestAnimationFrame(draw); return; }
+        const parent = canvas.parentElement as HTMLElement | null;
+        if (!parent) { raf = requestAnimationFrame(draw); return; }
+        const rect = parent.getBoundingClientRect();
+        const dpr = (window.devicePixelRatio || 1);
+        const width = Math.max(1, Math.floor(rect.width));
+        const height = Math.max(1, Math.floor(rect.height));
+        if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+          canvas.width = Math.floor(width * dpr);
+          canvas.height = Math.floor(height * dpr);
+          canvas.style.width = `${width}px`;
+          canvas.style.height = `${height}px`;
+        }
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { raf = requestAnimationFrame(draw); return; }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        const ts = chart.timeScale();
+        const teal = 'rgba(20, 184, 166, 0.25)'; // teal-like fill
+        const border = 'rgba(20, 184, 166, 0.6)';
+        const dashColor = 'rgba(148, 163, 184, 0.5)';
+
+        (drawings || []).forEach((d: any) => {
+          if (d.type !== 'arc' || !d.start || !d.end || !d.control) return;
+          const x1 = ts.timeToCoordinate(d.start.time as any);
+          const y1 = series.priceToCoordinate ? series.priceToCoordinate(d.start.price) : null;
+          const x2 = ts.timeToCoordinate(d.end.time as any);
+          const y2 = series.priceToCoordinate ? series.priceToCoordinate(d.end.price) : null;
+          const xc = ts.timeToCoordinate(d.control.time as any);
+          const yc = series.priceToCoordinate ? series.priceToCoordinate(d.control.price) : null;
+          if (x1 == null || y1 == null || x2 == null || y2 == null || xc == null || yc == null) return;
+
+          // Sample the quadratic Bezier in screen space for smooth fill
+          const steps = 60;
+          const pts: Array<{x:number;y:number}> = [];
+          const ta = 0, tb = 1;
+          for (let i=0;i<=steps;i++) {
+            const u = i/steps;
+            const bx = (1-u)*(1-u)*x1 + 2*(1-u)*u*xc + u*u*x2;
+            const by = (1-u)*(1-u)*y1 + 2*(1-u)*u*yc + u*u*y2;
+            pts.push({x:bx,y:by});
+          }
+          // Baseline: horizontal line at min(y1,y2) between x1..x2 like screenshot
+          const baseY = Math.max(Math.min(y1, y2), 0);
+          const leftX = Math.max(0, Math.min(x1, x2));
+          const rightX = Math.min(width, Math.max(x1, x2));
+
+          // Fill polygon path: start at left baseline -> arc -> right baseline -> back
+          ctx.beginPath();
+          ctx.moveTo(leftX, baseY);
+          pts.forEach((p) => ctx.lineTo(p.x, p.y));
+          ctx.lineTo(rightX, baseY);
+          ctx.closePath();
+          ctx.fillStyle = teal;
+          ctx.fill();
+          // Arc border
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+          ctx.strokeStyle = border;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          // Dashed baseline
+          ctx.save();
+          ctx.setLineDash([6,6]);
+          ctx.beginPath();
+          ctx.moveTo(leftX, baseY);
+          ctx.lineTo(rightX, baseY);
+          ctx.strokeStyle = dashColor;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.restore();
+        });
+
+        // Live preview for Arc placement using crosshair and staged points
+        if (drawingTool === 'arc') {
+          const pts = drawingStateRef.current.points || [];
+          const cur = crosshairRef.current;
+          if (pts.length === 1 && cur) {
+            const p1 = pts[0];
+            const baseY = p1.y;
+            const leftX = Math.max(0, Math.min(p1.x, cur.x));
+            const rightX = Math.min(width, Math.max(p1.x, cur.x));
+            ctx.save();
+            ctx.setLineDash([6,6]);
+            ctx.beginPath();
+            ctx.moveTo(leftX, baseY);
+            ctx.lineTo(rightX, baseY);
+            ctx.strokeStyle = 'rgba(148,163,184,0.6)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+          } else if (pts.length === 2 && cur) {
+            const p1 = pts[0];
+            const p2 = pts[1];
+            const baseY = p1.y; // enforce baseline
+            const x1 = p1.x, x2 = p2.x, xc = cur.x; const yc = cur.y;
+            const steps = 60; const poly: Array<{x:number;y:number}> = [];
+            for (let i=0;i<=steps;i++) {
+              const u = i/steps;
+              const bx = (1-u)*(1-u)*x1 + 2*(1-u)*u*xc + u*u*x2;
+              const by = (1-u)*(1-u)*baseY + 2*(1-u)*u*yc + u*u*baseY;
+              poly.push({x:bx,y:by});
+            }
+            const leftX = Math.max(0, Math.min(x1, x2));
+            const rightX = Math.min(width, Math.max(x1, x2));
+            ctx.beginPath();
+            ctx.moveTo(leftX, baseY);
+            poly.forEach(p => ctx.lineTo(p.x, p.y));
+            ctx.lineTo(rightX, baseY);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(20,184,166,0.18)';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(poly[0].x, poly[0].y);
+            for (let i=1;i<poly.length;i++) ctx.lineTo(poly[i].x, poly[i].y);
+            ctx.strokeStyle = 'rgba(20,184,166,0.6)';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.save();
+            ctx.setLineDash([6,6]);
+            ctx.beginPath();
+            ctx.moveTo(leftX, baseY);
+            ctx.lineTo(rightX, baseY);
+            ctx.strokeStyle = 'rgba(148,163,184,0.5)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      } catch {}
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [drawings]);
+
   const loadCandles = async () => {
     setLoading(true);
     let candles = await fetchCandles();
@@ -760,6 +1310,11 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
     const last = lastTimeRef.current;
     if (!chart || !last) return;
   const PAD_RATIO = 0.45; // keep last bar ~55% from left (near center with slight right bias)
+
+    // Ensure we always have some whitespace after the last candle for drawings
+    const ensureFutureWhitespace = (bars: number) => {
+      try { chart.timeScale().applyOptions({ rightOffset: Math.max(bars, 12) }); } catch {}
+    };
     const enforceBarSpacing = (desiredBars: number) => {
       const el = containerRef.current;
       if (!el) return;
@@ -781,13 +1336,14 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
       : next === '1h' ? 72000   // 20 x 1h = 20h (~0.8d)
       : next === '4h' ? 288000  // 20 x 4h = 3.3d
       : 1728000;                // 20 x 1d = 20d
-    const to = (last + durSec * PAD_RATIO) as unknown as Time;
-    const from = (last - durSec * (1 - PAD_RATIO)) as unknown as Time;
+    const to = (last + durSec * Math.max(PAD_RATIO, 0.55)) as unknown as Time; // push a bit more into future
+    const from = (last - durSec * (1 - Math.max(PAD_RATIO, 0.55))) as unknown as Time;
     isProgrammaticRangeChange.current = true;
     chart.timeScale().setVisibleRange({ from, to });
   // Ensure bars are visually sized (≈30 bars on screen for smaller candles)
   // Increased density target from ~30 to ~40 bars
   enforceBarSpacing(40);
+    ensureFutureWhitespace(22);
     setTimeout(() => { isProgrammaticRangeChange.current = false; }, 0);
   };
 
@@ -935,11 +1491,14 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
         horzLines: { color: '#222' },
       },
   rightPriceScale: { borderColor: '#333', scaleMargins: { top: 0.06, bottom: 0.12 } },
-  timeScale: { borderColor: '#333', timeVisible: true, secondsVisible: false, rightOffset: 6 },
+  // Increase initial rightOffset to leave visible future whitespace for drawings
+  timeScale: { borderColor: '#333', timeVisible: true, secondsVisible: false, rightOffset: 24, fixLeftEdge: false, fixRightEdge: false, allowShiftVisibleRangeOnWhitespaceClick: true },
       autoSize: true,
       crosshair: { mode: 1 },
     });
     chartRef.current = chart;
+    // Leave future whitespace from the start, helpful for prediction drawings
+    try { chart.timeScale().applyOptions({ rightOffset: 18 }); } catch {}
     // Initial spacing so first paint already looks zoomed-in
     try {
       const el = containerRef.current;
@@ -969,6 +1528,11 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
       }
     };
     window.addEventListener('resize', handleResize);    // Detect user-driven zoom/pan and switch to manual mode
+    const onCrosshair = (param: any) => {
+      if (!param?.point) { crosshairRef.current = null; return; }
+      crosshairRef.current = { x: param.point.x, y: param.point.y };
+    };
+    chart.subscribeCrosshairMove(onCrosshair);
     const unsub = chart.timeScale().subscribeVisibleTimeRangeChange(() => {
       if (isProgrammaticRangeChange.current) return;
       console.log('🔄 User manual scroll detected - switching to manual mode');
@@ -979,10 +1543,12 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      try { chart.unsubscribeCrosshairMove(onCrosshair); } catch {}
       // Clean up drawing event listeners
       if ((chart as any)._drawingCleanup) {
         (chart as any)._drawingCleanup();
       }
+      if (endGlobalDrag.current) { try { endGlobalDrag.current(); } catch {} }
       // Clean up drawings
       drawings.forEach(d => {
         if (d.line && seriesRef.current) {
@@ -991,8 +1557,16 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
         if (d.series) {
           try { chart.removeSeries(d.series); } catch {}
         }
+        try { if (d.seriesTop) chart.removeSeries(d.seriesTop); } catch {}
+        try { if (d.seriesBottom) chart.removeSeries(d.seriesBottom); } catch {}
+        try { if (d.seriesBase) chart.removeSeries(d.seriesBase); } catch {}
+        try { if (d.seriesParallel) chart.removeSeries(d.seriesParallel); } catch {}
+        
+        try { if (d.lines && Array.isArray(d.lines) && seriesRef.current) d.lines.forEach((ln: any) => { try { (seriesRef.current as any).removePriceLine(ln); } catch {} }); } catch {}
       });
       setDrawings([]);
+      setSelectedDrawingId(null);
+      dragStateRef.current = null;
       clearPriceLines(seriesRef.current);
       if (tradeMarkersSeriesRef.current) {
         try {
@@ -1126,11 +1700,12 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
                   : nextTf === '1h' ? 72000
                   : nextTf === '4h' ? 288000
                   : 1728000;
-                const PAD_RATIO = 0.45;
+                const PAD_RATIO = 0.6; // show more future for drawings
                 const to = (last + durSec * PAD_RATIO) as unknown as Time;
                 const from = (last - durSec * (1 - PAD_RATIO)) as unknown as Time;
                 isProgrammaticRangeChange.current = true;
                 chart.timeScale().setVisibleRange({ from, to });
+                try { chart.timeScale().applyOptions({ rightOffset: 24 }); } catch {}
                 // Maintain smaller candle spacing after range change
                 const el = containerRef.current;
                 if (el) {
@@ -1164,89 +1739,91 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
         background: '#0b0f16',
         color: '#e5e7eb',
         display: 'grid',
-        gridTemplateRows: 'auto 1fr',
+        gridTemplateRows: showSymbolPicker ? 'auto 1fr' : '1fr',
         gridTemplateColumns: '1fr',
-        gridTemplateAreas: '"header" "main"',
+        gridTemplateAreas: showSymbolPicker ? '"header" "main"' : '"main"',
         columnGap: 0,
         rowGap: 0
       }}
     >
       {/* Header Bar (kept minimal: symbol + live status) */}
-      <div
-        style={{
-          gridArea: 'header',
-          display: 'grid',
-          gridTemplateColumns: '1fr',
-          alignItems: 'center',
-          gap: 12,
-          padding: '12px 16px',
-          borderBottom: '1px solid #1f2937',
-          background: '#0f1320',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
-          position: 'relative',
-          zIndex: 5
-        }}
-      >
-        {/* Symbol selector + Live status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
-          <div style={{ color: '#9ca3af', fontSize: 12 }}>Symbol</div>
-          <select
-            value={pair}
-            onChange={(e) => handleSetPair(e.target.value)}
-            style={{
-              background: '#111827', color: '#e5e7eb', border: '1px solid #374151',
-              padding: '6px 10px', borderRadius: 6, cursor: 'pointer', minWidth: 200
-            }}
-          >
-            {assetsLoading && <option>Loading...</option>}
-            {!assetsLoading && assetList.length === 0 && (
-              <>
-                <optgroup label="Crypto (Fallback)">
-                  {cryptoFallbackRef.current.map(p => (
-                    <option key={p} value={p}>{p.replace('USDT','/USDT')}</option>
-                  ))}
-                </optgroup>
-              </>
-            )}
-            {!assetsLoading && assetList.length > 0 && (
-              (() => {
-                const forex = assetList.filter(a => a.symbol.includes('_'));
-                const crypto = assetList.filter(a => !a.symbol.includes('_'));
-                return (
-                  <>
-                    {forex.length > 0 && (
-                      <optgroup label="Forex Pairs">
-                        {forex.map(a => (
-                          <option key={a.symbol} value={a.symbol}>
-                            {(a.display || a.symbol.replace('_','/'))}{a.payout ? ` (${a.payout}%)` : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {crypto.length > 0 && (
-                      <optgroup label="Crypto">
-                        {crypto.map(a => (
-                          <option key={a.symbol} value={a.symbol}>
-                            {(a.display || a.symbol.replace('USDT','/USDT'))}{a.payout ? ` (${a.payout}%)` : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </>
-                );
-              })()
-            )}
-          </select>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-            <div style={{
-              width: 8, height: 8, borderRadius: '50%',
-              backgroundColor: loading ? '#f59e0b' : '#10b981',
-              boxShadow: `0 0 8px ${loading ? '#f59e0b' : '#10b981'}`
-            }} />
-            {loading ? 'Loading…' : 'Live'}
+      {showSymbolPicker && (
+        <div
+          style={{
+            gridArea: 'header',
+            display: 'grid',
+            gridTemplateColumns: '1fr',
+            alignItems: 'center',
+            gap: 12,
+            padding: '12px 16px',
+            borderBottom: '1px solid #1f2937',
+            background: '#0f1320',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
+            position: 'relative',
+            zIndex: 5
+          }}
+        >
+          {/* Symbol selector + Live status */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
+            <div style={{ color: '#9ca3af', fontSize: 12 }}>Symbol</div>
+            <select
+              value={pair}
+              onChange={(e) => handleSetPair(e.target.value)}
+              style={{
+                background: '#111827', color: '#e5e7eb', border: '1px solid #374151',
+                padding: '6px 10px', borderRadius: 6, cursor: 'pointer', minWidth: 200
+              }}
+            >
+              {assetsLoading && <option>Loading...</option>}
+              {!assetsLoading && assetList.length === 0 && (
+                <>
+                  <optgroup label="Crypto (Fallback)">
+                    {cryptoFallbackRef.current.map(p => (
+                      <option key={p} value={p}>{p.replace('USDT','/USDT')}</option>
+                    ))}
+                  </optgroup>
+                </>
+              )}
+              {!assetsLoading && assetList.length > 0 && (
+                (() => {
+                  const forex = assetList.filter(a => a.symbol.includes('_'));
+                  const crypto = assetList.filter(a => !a.symbol.includes('_'));
+                  return (
+                    <>
+                      {forex.length > 0 && (
+                        <optgroup label="Forex Pairs">
+                          {forex.map(a => (
+                            <option key={a.symbol} value={a.symbol}>
+                              {(a.display || a.symbol.replace('_','/'))}{a.payout ? ` (${a.payout}%)` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {crypto.length > 0 && (
+                        <optgroup label="Crypto">
+                          {crypto.map(a => (
+                            <option key={a.symbol} value={a.symbol}>
+                              {(a.display || a.symbol.replace('USDT','/USDT'))}{a.payout ? ` (${a.payout}%)` : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </>
+                  );
+                })()
+              )}
+            </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+              <div style={{
+                width: 8, height: 8, borderRadius: '50%',
+                backgroundColor: loading ? '#f59e0b' : '#10b981',
+                boxShadow: `0 0 8px ${loading ? '#f59e0b' : '#10b981'}`
+              }} />
+              {loading ? 'Loading…' : 'Live'}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Popup Panels */}
       {showIndicators && (
@@ -1265,6 +1842,12 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
               updateColors(key, colors);
             }
           }}
+          onParamsChange={(key, params) => {
+            if (lastCandlesRef.current.length > 0) {
+              const intervalSec = getBucketSeconds(tfRef.current);
+              updateParams(key, params, lastCandlesRef.current, intervalSec);
+            }
+          }}
           onClose={() => setShowIndicators(false)}
           docked={false}
         />
@@ -1275,6 +1858,15 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
         {/* Center wrapper to mimic QuoteX style and leave side space for future widgets */}
         <div style={{ position: 'relative', width: '100%', maxWidth: 1400, flex: 1, margin: '0 auto', height: '100%', minWidth: 0, minHeight: 0 }}>
           <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
+          {/* Filled Arc Canvas Overlay (below handles) */}
+          <canvas ref={arcCanvasRef} style={{ position: 'absolute', inset: 0, zIndex: 24, pointerEvents: 'none' }} />
+          {/* Loading overlay when switching pairs */}
+          {loading && (
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(15, 23, 42, 0.8)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 30 }}>
+              <div className="animate-spin h-12 w-12 border-4 border-blue-400 border-t-transparent rounded-full mb-4" />
+              <div style={{ color: '#e2e8f0', fontSize: 16, fontWeight: 'bold' }}>Loading {pair}...</div>
+            </div>
+          )}
           {/* Floating Tools Dock - bottom-left */}
           <div
             style={{
@@ -1315,7 +1907,10 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
                     {[
                       {key:'trend', label:'Trend Line'},
                       {key:'horizontal', label:'Horizontal Line'},
-                      {key:'vertical', label:'Vertical Line'},
+                      {key:'rectangle', label:'Rectangle'},
+                      {key:'channel', label:'Parallel Channel'},
+                      {key:'arc', label:'Arc'},
+                      {key:'fib', label:'Fibonacci Retracement'},
                       {key:null, label:'None'},
                       {key:'__clear__', label:'Clear All'},
                     ].map(opt => (
@@ -1326,6 +1921,8 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
                           setShowDrawingMenu(false);
                           if (opt.key) setTradeLineMode(false);
                           drawingStateRef.current.points = [];
+                          // Ensure there is room on the right before the first click
+                          ensureFutureWhitespaceGlobal(24);
                         }}
                         style={{ textAlign:'left', background: (opt.key && drawingTool===opt.key)?'#1f2937':'#111827', color:'#e5e7eb', border:'1px solid #374151', padding:'6px 10px', borderRadius:6, cursor:'pointer' }}
                       >{opt.label}</button>
@@ -1456,6 +2053,205 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
               )}
             </div>
           )}
+
+              {/* Interactive drawing handles overlay */}
+              {chartRef.current && seriesRef.current && drawings.length > 0 && lastCandlesRef.current.length > 0 && (
+                <div
+                  style={{ position: 'absolute', inset: 0, zIndex: 25, pointerEvents: isDraggingDraw ? 'auto' : 'none' }}
+                  onMouseMove={(e) => { const rect = (containerRef.current as HTMLDivElement).getBoundingClientRect(); updateDragFromClient(e.clientX, e.clientY); }}
+                  onMouseUp={() => { dragStateRef.current = null; setIsDraggingDraw(false); }}
+                  onMouseLeave={() => { dragStateRef.current = null; setIsDraggingDraw(false); }}
+                  onTouchMove={(e) => { const t = e.touches?.[0]; if (!t) return; updateDragFromClient(t.clientX, t.clientY); }}
+                  onTouchEnd={() => { dragStateRef.current = null; setIsDraggingDraw(false); }}
+                >
+                  {/* Render handles for each drawing */}
+                  {drawings.map((d: any) => {
+                    const chart = chartRef.current!;
+                    const series = seriesRef.current as any;
+                    const ts = chart.timeScale();
+                    const handleSize = 10;
+                    const stroke = d.id === selectedDrawingId ? '#ffd29a' : '#FF6B35';
+                    const common = { width: handleSize, height: handleSize, borderRadius: '50%', border: `2px solid ${stroke}`, background: '#0b0f16', position: 'absolute' as const, pointerEvents: 'auto' as const, boxShadow: '0 0 6px rgba(0,0,0,0.6)', cursor: 'grab' };
+                    const elems: any[] = [];
+                    if (d.type === 'trend' && d.start && d.end) {
+                      const x1 = ts.timeToCoordinate(d.start.time as any);
+                      const y1 = series.priceToCoordinate ? series.priceToCoordinate(d.start.price) : null;
+                      const x2 = ts.timeToCoordinate(d.end.time as any);
+                      const y2 = series.priceToCoordinate ? series.priceToCoordinate(d.end.price) : null;
+                      if (x1 != null && y1 != null) {
+                        elems.push(
+                          <div key={`${d.id}-s`} style={{ ...common, left: x1 - handleSize/2, top: y1 - handleSize/2 }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'trend', 'start'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'trend', 'start'); }}
+                          />
+                        );
+                      }
+                      if (x2 != null && y2 != null) {
+                        elems.push(
+                          <div key={`${d.id}-e`} style={{ ...common, left: x2 - handleSize/2, top: y2 - handleSize/2 }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'trend', 'end'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'trend', 'end'); }}
+                          />
+                        );
+                      }
+                      // Midpoint handle to move the entire line
+                      if (x1 != null && y1 != null && x2 != null && y2 != null) {
+                        const mx = (x1 + x2) / 2; const my = (y1 + y2) / 2;
+                        elems.push(
+                          <div key={`${d.id}-m`} style={{ ...common, left: mx - (handleSize-2)/2, top: my - (handleSize-2)/2, width: handleSize-2, height: handleSize-2, borderStyle: 'dashed' }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'trend', 'line'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'trend', 'line'); }}
+                          />
+                        );
+                      }
+                    } else if (d.type === 'horizontal' && typeof d.price === 'number') {
+                      const y = series.priceToCoordinate ? series.priceToCoordinate(d.price) : null;
+                      if (y != null) {
+                        const rect = (containerRef.current as HTMLDivElement).getBoundingClientRect();
+                        // Left-side handle
+                        elems.push(
+                          <div key={`${d.id}-h`} style={{ ...common, left: 8, top: y - handleSize/2 }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'horizontal', 'line'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'horizontal', 'line'); }}
+                          />
+                        );
+                      }
+                    } else if (d.type === 'rectangle' && d.a && d.b) {
+                      const x1 = ts.timeToCoordinate(d.a.time as any);
+                      const y1 = series.priceToCoordinate ? series.priceToCoordinate(d.a.price) : null;
+                      const x2 = ts.timeToCoordinate(d.b.time as any);
+                      const y2 = series.priceToCoordinate ? series.priceToCoordinate(d.b.price) : null;
+                      if (x1 != null && y1 != null) {
+                        elems.push(
+                          <div key={`${d.id}-ra`} style={{ ...common, left: x1 - handleSize/2, top: y1 - handleSize/2 }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'rectangle', 'a'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'rectangle', 'a'); }}
+                          />
+                        );
+                      }
+                      if (x2 != null && y2 != null) {
+                        elems.push(
+                          <div key={`${d.id}-rb`} style={{ ...common, left: x2 - handleSize/2, top: y2 - handleSize/2 }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'rectangle', 'b'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'rectangle', 'b'); }}
+                          />
+                        );
+                      }
+                      if (x1 != null && x2 != null && y1 != null && y2 != null) {
+                        const mx = (x1 + x2) / 2; const my = (y1 + y2) / 2;
+                        elems.push(
+                          <div key={`${d.id}-rm`} style={{ ...common, left: mx - (handleSize-2)/2, top: my - (handleSize-2)/2, width: handleSize-2, height: handleSize-2, borderStyle: 'dashed' }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'rectangle', 'move'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'rectangle', 'move'); }}
+                          />
+                        );
+                      }
+                    } else if (d.type === 'channel' && d.start && d.end) {
+                      const x1 = ts.timeToCoordinate(d.start.time as any);
+                      const y1 = series.priceToCoordinate ? series.priceToCoordinate(d.start.price) : null;
+                      const x2 = ts.timeToCoordinate(d.end.time as any);
+                      const y2 = series.priceToCoordinate ? series.priceToCoordinate(d.end.price) : null;
+                      if (x1 != null && y1 != null) {
+                        elems.push(
+                          <div key={`${d.id}-cs`} style={{ ...common, left: x1 - handleSize/2, top: y1 - handleSize/2 }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'channel', 'start'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'channel', 'start'); }}
+                          />
+                        );
+                      }
+                      if (x2 != null && y2 != null) {
+                        elems.push(
+                          <div key={`${d.id}-ce`} style={{ ...common, left: x2 - handleSize/2, top: y2 - handleSize/2 }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'channel', 'end'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'channel', 'end'); }}
+                          />
+                        );
+                      }
+                      if (x1 != null && y1 != null && x2 != null && y2 != null) {
+                        const mx = (x1 + x2) / 2; const my = (y1 + y2) / 2;
+                        elems.push(
+                          <div key={`${d.id}-cm`} style={{ ...common, left: mx - (handleSize-2)/2, top: my - (handleSize-2)/2, width: handleSize-2, height: handleSize-2, borderStyle: 'dashed' }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'channel', 'move'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'channel', 'move'); }}
+                          />
+                        );
+                        // Offset handle at midpoint offset direction
+                        const dx = x2 - x1; const dy = (y2 as number) - (y1 as number);
+                        const len = Math.hypot(dx, dy) || 1;
+                        const nx = -dy / len; const ny = dx / len; // normal vector
+                        const offPointX = mx + nx * 20; const offPointY = my + ny * 20;
+                        elems.push(
+                          <div key={`${d.id}-co`} style={{ ...common, left: offPointX - handleSize/2, top: offPointY - handleSize/2 }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'channel', 'offset'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'channel', 'offset'); }}
+                          />
+                        );
+                      }
+                    } else if (d.type === 'arc' && d.start && d.end && d.control) {
+                      const x1 = ts.timeToCoordinate(d.start.time as any);
+                      const y1 = series.priceToCoordinate ? series.priceToCoordinate(d.start.price) : null;
+                      const x2 = ts.timeToCoordinate(d.end.time as any);
+                      const y2 = series.priceToCoordinate ? series.priceToCoordinate(d.end.price) : null;
+                      const xc = ts.timeToCoordinate(d.control.time as any);
+                      const yc = series.priceToCoordinate ? series.priceToCoordinate(d.control.price) : null;
+                      if (x1 != null && y1 != null) elems.push(
+                        <div key={`${d.id}-as`} style={{ ...common, left: x1 - handleSize/2, top: y1 - handleSize/2 }}
+                          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'arc', 'start'); }}
+                          onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'arc', 'start'); }}
+                        />
+                      );
+                      if (x2 != null && y2 != null) elems.push(
+                        <div key={`${d.id}-ae`} style={{ ...common, left: x2 - handleSize/2, top: y2 - handleSize/2 }}
+                          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'arc', 'end'); }}
+                          onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'arc', 'end'); }}
+                        />
+                      );
+                      if (xc != null && yc != null) elems.push(
+                        <div key={`${d.id}-ac`} style={{ ...common, left: xc - handleSize/2, top: yc - handleSize/2 }}
+                          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'arc', 'control'); }}
+                          onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'arc', 'control'); }}
+                        />
+                      );
+                      if (x1 != null && y1 != null && x2 != null && y2 != null && xc != null && yc != null) {
+                        const mx = (x1 + x2 + xc) / 3; const my = (y1 + y2 + yc) / 3;
+                        elems.push(
+                          <div key={`${d.id}-am`} style={{ ...common, left: mx - (handleSize-2)/2, top: my - (handleSize-2)/2, width: handleSize-2, height: handleSize-2, borderStyle: 'dashed' }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'arc', 'move'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'arc', 'move'); }}
+                          />
+                        );
+                      }
+                    } else if (d.type === 'fib' && d.start && d.end) {
+                      const x1 = ts.timeToCoordinate(d.start.time as any);
+                      const y1 = series.priceToCoordinate ? series.priceToCoordinate(d.start.price) : null;
+                      const x2 = ts.timeToCoordinate(d.end.time as any);
+                      const y2 = series.priceToCoordinate ? series.priceToCoordinate(d.end.price) : null;
+                      if (x1 != null && y1 != null) elems.push(
+                        <div key={`${d.id}-fs`} style={{ ...common, left: x1 - handleSize/2, top: y1 - handleSize/2 }}
+                          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'fib', 'start'); }}
+                          onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'fib', 'start'); }}
+                        />
+                      );
+                      if (x2 != null && y2 != null) elems.push(
+                        <div key={`${d.id}-fe`} style={{ ...common, left: x2 - handleSize/2, top: y2 - handleSize/2 }}
+                          onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'fib', 'end'); }}
+                          onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'fib', 'end'); }}
+                        />
+                      );
+                      if (x1 != null && y1 != null && x2 != null && y2 != null) {
+                        const mx = (x1 + x2) / 2; const my = (y1 + y2) / 2;
+                        elems.push(
+                          <div key={`${d.id}-fm`} style={{ ...common, left: mx - (handleSize-2)/2, top: my - (handleSize-2)/2, width: handleSize-2, height: handleSize-2, borderStyle: 'dashed' }}
+                            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalDrag(d.id, 'fib', 'move'); }}
+                            onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); setSelectedDrawingId(d.id); startGlobalTouchDrag(d.id, 'fib', 'move'); }}
+                          />
+                        );
+                      }
+                    }
+                    return <React.Fragment key={d.id}>{elems}</React.Fragment>;
+                  })}
+                </div>
+              )}
           
           {/* Countdown overlay (next candle time) - Bottom center like reference */}
           <div
@@ -1486,3 +2282,8 @@ export default function CandlestickChart({ symbol = 'ETHUSDT', onPriceUpdate, on
     </div>
   );
 }
+
+// Drawing effect for arc fill overlay
+// We append it after component to keep file-local scope
+// Note: This relies on React closure capturing refs; valid inside same module
+export function __ArcFillOverlayEffect() { return null; }

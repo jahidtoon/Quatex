@@ -293,32 +293,48 @@ export const calcZigZag = (candles: Candle[], deviationPct = 2): IndicatorOutput
   return [{ type: 'line', color: '#ff6b35', data }];
 };
 
-export const calcAlligator = (candles: Candle[], intervalSec: number): IndicatorOutput[] => {
-  if (candles.length < 13) return [];
-  
+export const calcAlligator = (
+  candles: Candle[],
+  intervalSec: number,
+  opts?: {
+    jawPeriod?: number;
+    teethPeriod?: number;
+    lipsPeriod?: number;
+    jawShift?: number;
+    teethShift?: number;
+    lipsShift?: number;
+  }
+): IndicatorOutput[] => {
+  if (candles.length < 3) return [];
+
+  const {
+    jawPeriod = 13,
+    teethPeriod = 8,
+    lipsPeriod = 5,
+    jawShift = 8,
+    teethShift = 5,
+    lipsShift = 3,
+  } = opts || {};
+
   const median = candles.map(c => (c.high + c.low) / 2);
-  
-  // Calculate the three lines with proper SMMA
-  const jaw = smma(median, 13);    // Blue line (13-period SMMA)
-  const teeth = smma(median, 8);   // Red line (8-period SMMA) 
-  const lips = smma(median, 5);    // Green line (5-period SMMA)
-  
+
+  // Calculate the three lines with proper SMMA using configured periods
+  const jaw = smma(median, Math.max(1, Math.floor(jawPeriod)));
+  const teeth = smma(median, Math.max(1, Math.floor(teethPeriod)));
+  const lips = smma(median, Math.max(1, Math.floor(lipsPeriod)));
+
   // Apply forward shifts for future displacement
-  const jawShift = 8;    // Jaw shifts 8 periods forward
-  const teethShift = 5;  // Teeth shifts 5 periods forward  
-  const lipsShift = 3;   // Lips shifts 3 periods forward
-  
   const shiftData = (arr: (number | null)[], shift: number) => {
-    return candles.map((c, i) => ({
-      time: c.time + (shift * intervalSec),
-      value: arr[i] ?? null
-    })).filter(item => item.value !== null) as Array<{ time: number; value: number }>;
+    const shiftSec = (Math.max(0, Math.floor(shift)) || 0) * intervalSec;
+    return candles
+      .map((c, i) => ({ time: c.time + shiftSec, value: arr[i] ?? null }))
+      .filter(item => item.value !== null) as Array<{ time: number; value: number }>;
   };
-  
+
   return [
-    { type: 'line', color: '#2563eb', data: shiftData(jaw, jawShift) },     // Blue Jaw
-    { type: 'line', color: '#dc2626', data: shiftData(teeth, teethShift) }, // Red Teeth
-    { type: 'line', color: '#16a34a', data: shiftData(lips, lipsShift) },   // Green Lips
+    { type: 'line', color: '#2563eb', data: shiftData(jaw, jawShift) },
+    { type: 'line', color: '#dc2626', data: shiftData(teeth, teethShift) },
+    { type: 'line', color: '#16a34a', data: shiftData(lips, lipsShift) },
   ];
 };
 
